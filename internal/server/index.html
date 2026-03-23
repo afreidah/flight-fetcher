@@ -41,10 +41,23 @@
     #detail .section { color: #60a5fa; font-weight: 600; padding-top: 0.75rem; }
     #status { padding: 1rem; color: #64748b; font-size: 0.9rem; }
     .squawk-emergency { color: #ef4444; font-weight: 600; }
+    #squawk-section { padding: 0 1rem; }
+    #squawk-section h2 { font-size: 1rem; color: #ef4444; margin-bottom: 0.5rem; }
+    .squawk-alert {
+      padding: 0.5rem 0.75rem;
+      background: #1e293b;
+      border: 1px solid #7f1d1d;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .squawk-alert .code { color: #ef4444; font-weight: 600; }
+    .squawk-alert .info { color: #94a3b8; }
   </style>
 </head>
 <body>
   <h1>Flight Fetcher</h1>
+  <div id="squawk-section"></div>
   <div id="status">Loading...</div>
   <div id="flights"></div>
   <div id="detail"></div>
@@ -149,8 +162,33 @@
       return d.innerHTML;
     }
 
+    async function loadSquawkAlerts() {
+      var el = document.getElementById("squawk-section");
+      try {
+        var resp = await fetch("/api/squawk-alerts");
+        var alerts = await resp.json();
+        if (!alerts || alerts.length === 0) { el.innerHTML = ""; return; }
+        var labels = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"};
+        var html = '<h2>Global Emergency Squawk Alerts (last 24h)</h2>';
+        alerts.forEach(function(a) {
+          var label = labels[a.Squawk] || a.Squawk;
+          var time = new Date(a.SeenAt).toLocaleString();
+          html += '<div class="squawk-alert">' +
+            '<span class="code">' + esc(a.Squawk) + ' ' + esc(label) + '</span> ' +
+            '<span class="info">' + esc(a.Icao24) +
+            (a.Callsign ? ' / ' + esc(a.Callsign) : '') +
+            ' at ' + esc(time) + '</span></div>';
+        });
+        el.innerHTML = html;
+      } catch (e) {
+        el.innerHTML = "";
+      }
+    }
+
     loadFlights();
+    loadSquawkAlerts();
     setInterval(loadFlights, 5000);
+    setInterval(loadSquawkAlerts, 30000);
   </script>
 </body>
 </html>

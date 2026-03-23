@@ -16,10 +16,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
+
+	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
 )
 
 // -------------------------------------------------------------------------
@@ -42,15 +45,21 @@ type RouteReader interface {
 	GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error)
 }
 
+// SquawkAlertReader retrieves recent emergency squawk alerts.
+type SquawkAlertReader interface {
+	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]db.SquawkAlert, error)
+}
+
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
 
 // Server serves the web dashboard and flight data API.
 type Server struct {
-	flights  FlightLister
+	flights FlightLister
 	aircraft AircraftMetaReader
 	routes   RouteReader
+	alerts   SquawkAlertReader
 	mux      *http.ServeMux
 }
 
@@ -66,16 +75,18 @@ type flightDetail struct {
 // -------------------------------------------------------------------------
 
 // New creates a Server with the given data sources.
-func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader) *Server {
+func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader, alerts SquawkAlertReader) *Server {
 	s := &Server{
 		flights:  flights,
 		aircraft: aircraft,
 		routes:   routes,
+		alerts:   alerts,
 		mux:      http.NewServeMux(),
 	}
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	s.mux.HandleFunc("GET /api/flights", s.handleListFlights)
 	s.mux.HandleFunc("GET /api/flights/{icao24}", s.handleGetFlight)
+	s.mux.HandleFunc("GET /api/squawk-alerts", s.handleSquawkAlerts)
 	return s
 }
 
@@ -158,6 +169,22 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(r.Context(), w, detail)
+}
+
+// handleSquawkAlerts returns recent emergency squawk alerts as JSON.
+func (s *Server) handleSquawkAlerts(w http.ResponseWriter, r *http.Request) {
+	if s.alerts == nil {
+		writeJSON(r.Context(), w, []any{})
+		return
+	}
+	alerts, err := s.alerts.GetRecentSquawkAlerts(r.Context(), 24*time.Hour)
+	if err != nil {
+		http.Error(w, "failed to get squawk alerts", http.StatusInternalServerError)
+		slog.WarnContext(r.Context(), "api: squawk alerts failed",
+			slog.String("error", err.Error()))
+		return
+	}
+	writeJSON(r.Context(), w, alerts)
 }
 
 // writeJSON encodes v as JSON and writes it to w.

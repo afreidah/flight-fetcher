@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestLoad_ValidConfig verifies that a complete HCL config file is parsed correctly.
@@ -73,6 +74,54 @@ postgres {
 	}
 	if cfg.AirLabs != nil {
 		t.Error("AirLabs should be nil when block is omitted")
+	}
+	if cfg.SquawkMonitor != nil {
+		t.Error("SquawkMonitor should be nil when block is omitted")
+	}
+}
+
+// TestLoad_WithSquawkMonitorBlock verifies that the optional squawk_monitor block is parsed correctly.
+func TestLoad_WithSquawkMonitorBlock(t *testing.T) {
+	content := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+opensky {
+  id     = "test-client"
+  secret = "test-secret"
+}
+
+poll_interval = "20s"
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+
+squawk_monitor {
+  interval = "60s"
+}
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.SquawkMonitor == nil {
+		t.Fatal("SquawkMonitor should not be nil when block is present")
+	}
+	d, err := cfg.SquawkMonitor.SquawkMonitorDuration()
+	if err != nil {
+		t.Fatalf("SquawkMonitorDuration() error = %v", err)
+	}
+	if d != 60*time.Second {
+		t.Errorf("SquawkMonitorDuration() = %v, want 60s", d)
 	}
 }
 
