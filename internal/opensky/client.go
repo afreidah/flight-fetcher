@@ -4,8 +4,8 @@
 // Project: Flight Fetcher / Author: Alex Freidah
 //
 // HTTP client for the OpenSky Network REST API. Queries aircraft state vectors
-// within a geographic bounding box using API client credentials. Parses the raw
-// heterogeneous JSON arrays into typed StateVector structs.
+// within a geographic bounding box using API client credentials. Malformed
+// state vectors are logged and skipped rather than failing the entire response.
 // -------------------------------------------------------------------------------
 
 package opensky
@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -25,10 +26,10 @@ import (
 
 // Client communicates with the OpenSky Network API.
 type Client struct {
-	httpClient *http.Client
-	clientID   string
+	httpClient   *http.Client
+	clientID     string
 	clientSecret string
-	baseURL    string
+	baseURL      string
 }
 
 // -------------------------------------------------------------------------
@@ -46,7 +47,7 @@ func NewClient(clientID, clientSecret string) *Client {
 }
 
 // GetStates queries OpenSky for aircraft state vectors within the given
-// bounding box.
+// bounding box. Malformed individual state vectors are logged and skipped.
 func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse, error) {
 	url := fmt.Sprintf("%s/states/all?lamin=%f&lomin=%f&lamax=%f&lomax=%f",
 		c.baseURL, bbox.MinLat, bbox.MinLon, bbox.MaxLat, bbox.MaxLon)
@@ -70,65 +71,23 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 	}
 
 	var raw struct {
-		Time   int64           `json:"time"`
-		States [][]interface{} `json:"states"`
+		Time   int64              `json:"time"`
+		States []json.RawMessage  `json:"states"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	result := &StatesResponse{Time: raw.Time}
-	for _, s := range raw.States {
-		sv, err := parseStateVector(s)
-		if err != nil {
+	result := &StatesResponse{Time: raw.Time, States: make([]StateVector, 0, len(raw.States))}
+	for i, s := range raw.States {
+		var sv StateVector
+		if err := json.Unmarshal(s, &sv); err != nil {
+			slog.WarnContext(ctx, "skipping malformed state vector",
+				slog.Int("index", i),
+				slog.String("error", err.Error()))
 			continue
 		}
 		result.States = append(result.States, sv)
 	}
 	return result, nil
-}
-
-// -------------------------------------------------------------------------
-// INTERNALS
-// -------------------------------------------------------------------------
-
-// parseStateVector converts a raw JSON array from the OpenSky API into a
-// typed StateVector. Returns an error if the array is too short.
-func parseStateVector(raw []interface{}) (StateVector, error) {
-	if len(raw) < 17 {
-		return StateVector{}, fmt.Errorf("state vector too short: %d elements", len(raw))
-	}
-
-	sv := StateVector{}
-	if v, ok := raw[0].(string); ok {
-		sv.ICAO24 = v
-	}
-	if v, ok := raw[1].(string); ok {
-		sv.Callsign = v
-	}
-	if v, ok := raw[2].(string); ok {
-		sv.OriginCountry = v
-	}
-	if v, ok := raw[5].(float64); ok {
-		sv.Longitude = v
-	}
-	if v, ok := raw[6].(float64); ok {
-		sv.Latitude = v
-	}
-	if v, ok := raw[7].(float64); ok {
-		sv.BaroAltitude = v
-	}
-	if v, ok := raw[9].(float64); ok {
-		sv.Velocity = v
-	}
-	if v, ok := raw[10].(float64); ok {
-		sv.Heading = v
-	}
-	if v, ok := raw[11].(float64); ok {
-		sv.VerticalRate = v
-	}
-	if v, ok := raw[8].(bool); ok {
-		sv.OnGround = v
-	}
-	return sv, nil
 }

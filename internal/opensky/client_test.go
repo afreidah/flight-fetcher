@@ -3,14 +3,16 @@
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// Tests the OpenSky API client: state vector parsing from raw JSON arrays,
-// full HTTP response decoding, and error handling.
+// Tests the OpenSky API client and state vector JSON unmarshaling: valid arrays,
+// null fields, short arrays, type mismatches, full HTTP responses, and error
+// handling.
 // -------------------------------------------------------------------------------
 
 package opensky
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,31 +20,13 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/geo"
 )
 
-// TestParseStateVector_Valid verifies that a complete state vector array is parsed correctly.
-func TestParseStateVector_Valid(t *testing.T) {
-	raw := []interface{}{
-		"abc123",        // 0: icao24
-		"UAL123  ",      // 1: callsign
-		"United States", // 2: origin_country
-		float64(1234),   // 3: time_position
-		float64(1234),   // 4: last_contact
-		-118.4081,       // 5: longitude
-		33.9425,         // 6: latitude
-		3048.0,          // 7: baro_altitude
-		false,           // 8: on_ground
-		125.5,           // 9: velocity
-		270.0,           // 10: heading
-		-5.2,            // 11: vertical_rate
-		nil,             // 12: sensors
-		3100.0,          // 13: geo_altitude
-		"1234",          // 14: squawk
-		false,           // 15: spi
-		float64(0),      // 16: position_source
-	}
+// TestUnmarshalStateVector_Valid verifies that a complete state vector array is decoded correctly.
+func TestUnmarshalStateVector_Valid(t *testing.T) {
+	raw := `["abc123", "UAL123  ", "United States", 1234, 1234, -118.4081, 33.9425, 3048.0, false, 125.5, 270.0, -5.2, null, 3100.0, "1234", false, 0]`
 
-	sv, err := parseStateVector(raw)
-	if err != nil {
-		t.Fatalf("parseStateVector() error = %v", err)
+	var sv StateVector
+	if err := json.Unmarshal([]byte(raw), &sv); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if sv.ICAO24 != "abc123" {
 		t.Errorf("ICAO24 = %q, want %q", sv.ICAO24, "abc123")
@@ -76,33 +60,74 @@ func TestParseStateVector_Valid(t *testing.T) {
 	}
 }
 
-// TestParseStateVector_TooShort verifies that an undersized array returns an error.
-func TestParseStateVector_TooShort(t *testing.T) {
-	raw := []interface{}{"abc123", "UAL123"}
-	_, err := parseStateVector(raw)
-	if err == nil {
-		t.Error("parseStateVector() expected error for short array, got nil")
+// TestUnmarshalStateVector_TooShort verifies that an undersized array returns an error.
+func TestUnmarshalStateVector_TooShort(t *testing.T) {
+	raw := `["abc123", "UAL123"]`
+	var sv StateVector
+	if err := json.Unmarshal([]byte(raw), &sv); err == nil {
+		t.Error("Unmarshal() expected error for short array, got nil")
 	}
 }
 
-// TestParseStateVector_NullFields verifies that nil fields default to zero values.
-func TestParseStateVector_NullFields(t *testing.T) {
-	raw := make([]interface{}, 17)
-	raw[0] = "abc123"
-	raw[2] = "United States"
+// TestUnmarshalStateVector_NullFields verifies that null fields decode to zero values.
+func TestUnmarshalStateVector_NullFields(t *testing.T) {
+	raw := `["abc123", null, "United States", null, null, null, null, null, null, null, null, null]`
 
-	sv, err := parseStateVector(raw)
-	if err != nil {
-		t.Fatalf("parseStateVector() error = %v", err)
+	var sv StateVector
+	if err := json.Unmarshal([]byte(raw), &sv); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if sv.ICAO24 != "abc123" {
 		t.Errorf("ICAO24 = %q, want %q", sv.ICAO24, "abc123")
 	}
+	if sv.Callsign != "" {
+		t.Errorf("Callsign = %q, want empty for null field", sv.Callsign)
+	}
 	if sv.Latitude != 0 {
-		t.Errorf("Latitude = %f, want 0 for nil field", sv.Latitude)
+		t.Errorf("Latitude = %f, want 0 for null field", sv.Latitude)
 	}
 	if sv.OnGround != false {
-		t.Errorf("OnGround = %v, want false for nil field", sv.OnGround)
+		t.Errorf("OnGround = %v, want false for null field", sv.OnGround)
+	}
+}
+
+// TestUnmarshalStateVector_TypeMismatch verifies that wrong types are treated as zero values.
+func TestUnmarshalStateVector_TypeMismatch(t *testing.T) {
+	raw := `["abc123", 12345, "United States", null, null, "not_a_number", true, null, null, null, null, null]`
+
+	var sv StateVector
+	if err := json.Unmarshal([]byte(raw), &sv); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if sv.Callsign != "" {
+		t.Errorf("Callsign = %q, want empty for type mismatch", sv.Callsign)
+	}
+	if sv.Longitude != 0 {
+		t.Errorf("Longitude = %f, want 0 for type mismatch", sv.Longitude)
+	}
+}
+
+// TestUnmarshalStateVector_InvalidJSON verifies that malformed JSON returns an error.
+func TestUnmarshalStateVector_InvalidJSON(t *testing.T) {
+	raw := `not json at all`
+	var sv StateVector
+	if err := json.Unmarshal([]byte(raw), &sv); err == nil {
+		t.Error("Unmarshal() expected error for invalid JSON, got nil")
+	}
+}
+
+// TestUnmarshalStateVector_ObjectFormat verifies that standard JSON object format is decoded correctly.
+func TestUnmarshalStateVector_ObjectFormat(t *testing.T) {
+	raw := `{"icao24":"abc123","callsign":"UAL123","origin_country":"United States","longitude":-118.41,"latitude":33.94,"baro_altitude":3048,"velocity":125.5,"heading":270,"vertical_rate":-5.2,"on_ground":false}`
+	var sv StateVector
+	if err := json.Unmarshal([]byte(raw), &sv); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if sv.ICAO24 != "abc123" {
+		t.Errorf("ICAO24 = %q, want %q", sv.ICAO24, "abc123")
+	}
+	if sv.Velocity != 125.5 {
+		t.Errorf("Velocity = %f, want 125.5", sv.Velocity)
 	}
 }
 
@@ -132,6 +157,37 @@ func TestGetStates_Success(t *testing.T) {
 	}
 	if resp.States[0].ICAO24 != "abc123" {
 		t.Errorf("States[0].ICAO24 = %q, want %q", resp.States[0].ICAO24, "abc123")
+	}
+}
+
+// TestGetStates_SkipsMalformed verifies that malformed state vectors are skipped while valid ones are kept.
+func TestGetStates_SkipsMalformed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"time": 1234,
+			"states": [
+				["good1", "UAL1  ", "US", null, null, -118.0, 34.0, 3000.0, false, 100.0, 90.0, 0.0],
+				["short"],
+				["good2", "UAL2  ", "US", null, null, -118.0, 34.0, 3000.0, false, 100.0, 90.0, 0.0]
+			]
+		}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	resp, err := c.GetStates(context.Background(), geo.BBox{})
+	if err != nil {
+		t.Fatalf("GetStates() error = %v", err)
+	}
+	if len(resp.States) != 2 {
+		t.Fatalf("len(States) = %d, want 2 (malformed vector should be skipped)", len(resp.States))
+	}
+	if resp.States[0].ICAO24 != "good1" {
+		t.Errorf("States[0].ICAO24 = %q, want %q", resp.States[0].ICAO24, "good1")
+	}
+	if resp.States[1].ICAO24 != "good2" {
+		t.Errorf("States[1].ICAO24 = %q, want %q", resp.States[1].ICAO24, "good2")
 	}
 }
 
