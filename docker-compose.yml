@@ -1,0 +1,61 @@
+# -------------------------------------------------------------------------------
+# Flight Fetcher - Development Environment
+#
+# Project: Flight Fetcher / Author: Alex Freidah
+#
+# Runs the full stack locally: Postgres, Redis, and the flight-fetcher service.
+# Copy config.example.hcl to config.hcl and fill in OpenSky credentials before
+# starting: docker compose up --build
+# -------------------------------------------------------------------------------
+
+services:
+  # -------------------------------------------------------------------------
+  # POSTGRES
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_USER: flight_fetcher
+      POSTGRES_PASSWORD: flight_fetcher
+      POSTGRES_DB: flight_fetcher
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight_fetcher"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # REDIS
+  # -------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # FLIGHT FETCHER
+  # -------------------------------------------------------------------------
+  flight-fetcher:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    volumes:
+      - ./config.hcl:/etc/flight-fetcher/config.hcl:ro
+    command: ["-config", "/etc/flight-fetcher/config.hcl"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

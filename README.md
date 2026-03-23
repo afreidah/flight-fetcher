@@ -22,6 +22,17 @@ A Go service that polls the OpenSky Network API for aircraft within a configurab
     +-----------+  +------------+
 ```
 
+## Quick Start
+
+```bash
+cp config.example.hcl config.hcl
+# Edit config.hcl with your OpenSky credentials
+# Register at https://opensky-network.org for free API access
+docker compose up --build
+```
+
+The service starts polling OpenSky for aircraft near the configured location, enriches metadata via HexDB.io, and stores results in Postgres and Redis.
+
 ## Configuration
 
 Configuration is loaded from an HCL file. Secrets are templated in by Vault at deploy time.

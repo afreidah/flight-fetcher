@@ -38,8 +38,8 @@ type Location struct {
 
 // OpenSkyConfig holds credentials for the OpenSky Network API.
 type OpenSkyConfig struct {
-	Username string `hcl:"username"`
-	Password string `hcl:"password"`
+	ID     string `hcl:"id"`
+	Secret string `hcl:"secret"`
 }
 
 // RedisConfig holds connection parameters for Redis.
