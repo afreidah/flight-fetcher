@@ -1,4 +1,6 @@
-flight-fetcher
+/flight-fetcher
 *.hcl
 !deploy/*.hcl
 .env
+coverage.out
+dist/

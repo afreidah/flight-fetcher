@@ -1,0 +1,21 @@
+# -------------------------------------------------------------------------------
+# Codecov Configuration
+#
+# Project: Flight Fetcher / Author: Alex Freidah
+#
+# Configures PR status checks and excludes process entry points from coverage
+# reports.
+# -------------------------------------------------------------------------------
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+
+ignore:
+  - "cmd/"

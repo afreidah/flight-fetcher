@@ -1,3 +1,12 @@
+# -------------------------------------------------------------------------------
+# Flight Fetcher - Container Build
+#
+# Project: Flight Fetcher / Author: Alex Freidah
+#
+# Multi-stage build producing a minimal Alpine image with the flight-fetcher
+# binary. Configuration is mounted at runtime by Nomad.
+# -------------------------------------------------------------------------------
+
 FROM golang:1.23-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./

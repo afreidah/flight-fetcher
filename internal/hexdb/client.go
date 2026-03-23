@@ -1,3 +1,13 @@
+// -------------------------------------------------------------------------------
+// HexDB - API Client
+//
+// Project: Flight Fetcher / Author: Alex Freidah
+//
+// HTTP client for the HexDB.io aircraft metadata API. Performs lookups by
+// ICAO24 hex code to retrieve aircraft registration, type, manufacturer, and
+// operator information. No authentication required.
+// -------------------------------------------------------------------------------
+
 package hexdb
 
 import (
@@ -7,11 +17,21 @@ import (
 	"net/http"
 )
 
+// -------------------------------------------------------------------------
+// TYPES
+// -------------------------------------------------------------------------
+
+// Client communicates with the HexDB.io API.
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
 }
 
+// -------------------------------------------------------------------------
+// PUBLIC API
+// -------------------------------------------------------------------------
+
+// NewClient creates a HexDB.io API client.
 func NewClient() *Client {
 	return &Client{
 		httpClient: &http.Client{},
@@ -19,7 +39,8 @@ func NewClient() *Client {
 	}
 }
 
-// Lookup fetches aircraft metadata by ICAO24 hex code.
+// Lookup fetches aircraft metadata by ICAO24 hex code. Returns nil if the
+// aircraft is not found in HexDB.
 func (c *Client) Lookup(ctx context.Context, icao24 string) (*AircraftInfo, error) {
 	url := fmt.Sprintf("%s/aircraft/%s", c.baseURL, icao24)
 

@@ -1,0 +1,33 @@
+# -------------------------------------------------------------------------------
+# golangci-lint Configuration
+#
+# Project: Flight Fetcher / Author: Alex Freidah
+#
+# Linter settings for static analysis. Enables gocritic (diagnostic + performance
+# tags), misspell, and sloglint for structured logging consistency.
+# -------------------------------------------------------------------------------
+
+version: "2"
+linters:
+  enable:
+    - gocritic
+    - misspell
+    - sloglint
+  settings:
+    gocritic:
+      disabled-checks:
+        - exitAfterDefer
+      enabled-tags:
+        - diagnostic
+        - performance
+    sloglint:
+      context: "all"
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+formatters:
+  exclusions:
+    generated: lax

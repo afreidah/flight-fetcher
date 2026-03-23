@@ -1,3 +1,13 @@
+// -------------------------------------------------------------------------------
+// Store - Redis Current Flight State
+//
+// Project: Flight Fetcher / Author: Alex Freidah
+//
+// Manages ephemeral aircraft position data in Redis. Each flight is keyed by
+// ICAO24 with a TTL so entries auto-expire when an aircraft leaves the area
+// or stops broadcasting.
+// -------------------------------------------------------------------------------
+
 package store
 
 import (
@@ -6,18 +16,36 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"github.com/afreidah/flight-fetcher/internal/opensky"
+
+	"github.com/redis/go-redis/v9"
 )
 
+// -------------------------------------------------------------------------
+// CONSTANTS
+// -------------------------------------------------------------------------
+
+// flightKeyPrefix is the Redis key prefix for flight state entries.
 const flightKeyPrefix = "flight:"
+
+// defaultTTL is the expiry time for flight state entries. Aircraft that stop
+// broadcasting are automatically cleaned up after this duration.
 const defaultTTL = 2 * time.Minute
 
+// -------------------------------------------------------------------------
+// TYPES
+// -------------------------------------------------------------------------
+
+// RedisStore manages current flight state in Redis.
 type RedisStore struct {
 	client *redis.Client
 }
 
+// -------------------------------------------------------------------------
+// PUBLIC API
+// -------------------------------------------------------------------------
+
+// NewRedisStore creates a RedisStore connected to the given Redis instance.
 func NewRedisStore(addr, password string, db int) *RedisStore {
 	return &RedisStore{
 		client: redis.NewClient(&redis.Options{
@@ -38,7 +66,8 @@ func (r *RedisStore) SetFlight(ctx context.Context, sv opensky.StateVector) erro
 	return r.client.Set(ctx, key, data, defaultTTL).Err()
 }
 
-// GetFlight retrieves the current state of a flight by ICAO24.
+// GetFlight retrieves the current state of a flight by ICAO24. Returns nil
+// if the flight is not in Redis (expired or never seen).
 func (r *RedisStore) GetFlight(ctx context.Context, icao24 string) (*opensky.StateVector, error) {
 	key := flightKeyPrefix + icao24
 	data, err := r.client.Get(ctx, key).Bytes()
@@ -55,6 +84,7 @@ func (r *RedisStore) GetFlight(ctx context.Context, icao24 string) (*opensky.Sta
 	return &sv, nil
 }
 
+// Close shuts down the Redis client connection.
 func (r *RedisStore) Close() error {
 	return r.client.Close()
 }

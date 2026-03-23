@@ -1,9 +1,19 @@
+// -------------------------------------------------------------------------------
+// Flight Fetcher - Server Entrypoint
+//
+// Project: Flight Fetcher / Author: Alex Freidah
+//
+// Loads configuration, initializes API clients and data stores, wires the
+// polling pipeline, and runs until interrupted. OpenSky credentials are read
+// from the config file, which is rendered by Vault in production.
+// -------------------------------------------------------------------------------
+
 package main
 
 import (
 	"context"
 	"flag"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,24 +28,26 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
 	configPath := flag.String("config", "config.hcl", "path to config file")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("loading config: %v", err)
+		slog.Error("failed to load config", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	pollInterval, err := cfg.PollDuration()
 	if err != nil {
-		log.Fatalf("parsing poll interval: %v", err)
+		slog.Error("failed to parse poll interval", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
-	// OpenSky credentials from environment (injected by Vault)
-	oskyUser := os.Getenv("OPENSKY_USERNAME")
-	oskyPass := os.Getenv("OPENSKY_PASSWORD")
-
-	oskyClient := opensky.NewClient(oskyUser, oskyPass)
+	oskyClient := opensky.NewClient(cfg.OpenSky.Username, cfg.OpenSky.Password)
 	hexdbClient := hexdb.NewClient()
 
 	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
@@ -43,14 +55,13 @@ func main() {
 
 	pgStore, err := store.NewPostgresStore(cfg.Postgres.DSN)
 	if err != nil {
-		log.Fatalf("connecting to postgres: %v", err)
+		slog.Error("failed to connect to postgres", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 	defer pgStore.Close()
 
 	enr := enricher.New(hexdbClient, pgStore)
-
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
-
 	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -1,3 +1,13 @@
+// -------------------------------------------------------------------------------
+// OpenSky - API Client
+//
+// Project: Flight Fetcher / Author: Alex Freidah
+//
+// HTTP client for the OpenSky Network REST API. Queries aircraft state vectors
+// within a geographic bounding box using basic authentication. Parses the raw
+// heterogeneous JSON arrays into typed StateVector structs.
+// -------------------------------------------------------------------------------
+
 package opensky
 
 import (
@@ -9,6 +19,11 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/geo"
 )
 
+// -------------------------------------------------------------------------
+// TYPES
+// -------------------------------------------------------------------------
+
+// Client communicates with the OpenSky Network API.
 type Client struct {
 	httpClient *http.Client
 	username   string
@@ -16,6 +31,11 @@ type Client struct {
 	baseURL    string
 }
 
+// -------------------------------------------------------------------------
+// PUBLIC API
+// -------------------------------------------------------------------------
+
+// NewClient creates an OpenSky API client with the given credentials.
 func NewClient(username, password string) *Client {
 	return &Client{
 		httpClient: &http.Client{},
@@ -25,7 +45,8 @@ func NewClient(username, password string) *Client {
 	}
 }
 
-// GetStates queries OpenSky for aircraft within the given bounding box.
+// GetStates queries OpenSky for aircraft state vectors within the given
+// bounding box.
 func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse, error) {
 	url := fmt.Sprintf("%s/states/all?lamin=%f&lomin=%f&lamax=%f&lomax=%f",
 		c.baseURL, bbox.MinLat, bbox.MinLon, bbox.MaxLat, bbox.MaxLon)
@@ -67,6 +88,12 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 	return result, nil
 }
 
+// -------------------------------------------------------------------------
+// INTERNALS
+// -------------------------------------------------------------------------
+
+// parseStateVector converts a raw JSON array from the OpenSky API into a
+// typed StateVector. Returns an error if the array is too short.
 func parseStateVector(raw []interface{}) (StateVector, error) {
 	if len(raw) < 17 {
 		return StateVector{}, fmt.Errorf("state vector too short: %d elements", len(raw))

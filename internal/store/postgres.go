@@ -1,3 +1,13 @@
+// -------------------------------------------------------------------------------
+// Store - PostgreSQL Aircraft Metadata and History
+//
+// Project: Flight Fetcher / Author: Alex Freidah
+//
+// Manages persistent aircraft metadata cache and historical sighting log in
+// PostgreSQL. Aircraft metadata is cached indefinitely on first enrichment.
+// Sightings are logged each poll cycle for historical analysis.
+// -------------------------------------------------------------------------------
+
 package store
 
 import (
@@ -6,15 +16,26 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/lib/pq"
-
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
+
+	_ "github.com/lib/pq"
 )
 
+// -------------------------------------------------------------------------
+// TYPES
+// -------------------------------------------------------------------------
+
+// PostgresStore manages aircraft metadata and sighting history in PostgreSQL.
 type PostgresStore struct {
 	db *sql.DB
 }
 
+// -------------------------------------------------------------------------
+// PUBLIC API
+// -------------------------------------------------------------------------
+
+// NewPostgresStore opens a connection to PostgreSQL using the given DSN and
+// verifies connectivity.
 func NewPostgresStore(dsn string) (*PostgresStore, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -41,7 +62,8 @@ func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *hexdb.Aircra
 	return err
 }
 
-// GetAircraftMeta retrieves cached aircraft metadata by ICAO24. Returns nil if not found.
+// GetAircraftMeta retrieves cached aircraft metadata by ICAO24. Returns nil
+// if the aircraft has not been enriched yet.
 func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error) {
 	var info hexdb.AircraftInfo
 	err := p.db.QueryRowContext(ctx,
@@ -56,7 +78,8 @@ func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*he
 	return &info, nil
 }
 
-// LogSighting records a historical sighting of an aircraft.
+// LogSighting records a historical sighting of an aircraft at a given
+// position and distance from the configured center point.
 func (p *PostgresStore) LogSighting(ctx context.Context, icao24 string, lat, lon, distanceKm float64) error {
 	_, err := p.db.ExecContext(ctx,
 		`INSERT INTO sightings (icao24, lat, lon, distance_km, seen_at) VALUES ($1, $2, $3, $4, $5)`,
@@ -64,6 +87,7 @@ func (p *PostgresStore) LogSighting(ctx context.Context, icao24 string, lat, lon
 	return err
 }
 
+// Close shuts down the PostgreSQL connection pool.
 func (p *PostgresStore) Close() error {
 	return p.db.Close()
 }

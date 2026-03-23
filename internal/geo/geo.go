@@ -1,8 +1,22 @@
+// -------------------------------------------------------------------------------
+// Geo - Geographic Calculations
+//
+// Project: Flight Fetcher / Author: Alex Freidah
+//
+// Provides coordinate types, bounding box computation, and haversine distance
+// calculations for filtering aircraft by radius from a fixed location.
+// -------------------------------------------------------------------------------
+
 package geo
 
 import "math"
 
+// earthRadiusKm is the mean radius of the Earth in kilometers.
 const earthRadiusKm = 6371.0
+
+// -------------------------------------------------------------------------
+// TYPES
+// -------------------------------------------------------------------------
 
 // Coord represents a geographic coordinate.
 type Coord struct {
@@ -10,7 +24,8 @@ type Coord struct {
 	Lon float64
 }
 
-// BBox represents a geographic bounding box.
+// BBox represents a geographic bounding box defined by latitude and longitude
+// extents.
 type BBox struct {
 	MinLat float64
 	MaxLat float64
@@ -18,7 +33,13 @@ type BBox struct {
 	MaxLon float64
 }
 
-// BBoxAround returns a bounding box circumscribing a circle of the given radius (km) around c.
+// -------------------------------------------------------------------------
+// PUBLIC API
+// -------------------------------------------------------------------------
+
+// BBoxAround returns a bounding box circumscribing a circle of the given
+// radius (km) around c. Used to construct OpenSky API queries before
+// filtering by exact haversine distance.
 func BBoxAround(c Coord, radiusKm float64) BBox {
 	latDelta := radiusKm / earthRadiusKm * (180.0 / math.Pi)
 	lonDelta := latDelta / math.Cos(c.Lat*math.Pi/180.0)
