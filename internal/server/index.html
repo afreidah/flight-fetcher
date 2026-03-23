@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flight Fetcher</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; }
+    h1 { padding: 1rem; font-size: 1.25rem; background: #1e293b; border-bottom: 1px solid #334155; }
+    #flights {
+      padding: 1rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 0.5rem;
+    }
+    .flight {
+      padding: 0.75rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .flight:hover, .flight.selected { border-color: #60a5fa; }
+    .flight .icao { font-weight: 600; color: #60a5fa; }
+    .flight .callsign { color: #94a3b8; margin-left: 0.5rem; }
+    .flight .meta { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
+    #detail {
+      margin: 1rem;
+      padding: 1rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      display: none;
+    }
+    #detail h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: #f8fafc; }
+    #detail table { width: 100%; border-collapse: collapse; }
+    #detail td { padding: 0.35rem 0.75rem; border-bottom: 1px solid #1e293b; }
+    #detail td:first-child { color: #94a3b8; width: 160px; }
+    #detail .section { color: #60a5fa; font-weight: 600; padding-top: 0.75rem; }
+    #status { padding: 1rem; color: #64748b; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Flight Fetcher</h1>
+  <div id="status">Loading...</div>
+  <div id="flights"></div>
+  <div id="detail"></div>
+
+  <script>
+    const flightsEl = document.getElementById("flights");
+    const detailEl = document.getElementById("detail");
+    const statusEl = document.getElementById("status");
+    let selected = null;
+
+    async function loadFlights() {
+      try {
+        const resp = await fetch("/api/flights");
+        const flights = await resp.json();
+        statusEl.textContent = flights.length + " aircraft in range";
+        flightsEl.innerHTML = "";
+        flights.sort((a, b) => a.icao24.localeCompare(b.icao24));
+        flights.forEach(f => {
+          const div = document.createElement("div");
+          div.className = "flight" + (f.icao24 === selected ? " selected" : "");
+          div.innerHTML =
+            '<span class="icao">' + esc(f.icao24) + '</span>' +
+            '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
+            '<div class="meta">' +
+              esc(f.origin_country || "-") +
+              " | Alt: " + fmt(f.baro_altitude, "m") +
+              " | Spd: " + fmt(f.velocity, "m/s") +
+            '</div>';
+          div.onclick = () => selectFlight(f.icao24);
+          flightsEl.appendChild(div);
+        });
+      } catch (e) {
+        statusEl.textContent = "Error loading flights";
+      }
+    }
+
+    async function selectFlight(icao24) {
+      selected = icao24;
+      document.querySelectorAll(".flight").forEach(el => {
+        el.classList.toggle("selected", el.querySelector(".icao").textContent === icao24);
+      });
+      try {
+        const resp = await fetch("/api/flights/" + encodeURIComponent(icao24));
+        if (!resp.ok) { detailEl.style.display = "none"; return; }
+        const data = await resp.json();
+        const s = data.state;
+        let rows = '<h2>' + esc(s.icao24) + '</h2><table>';
+        rows += section("Flight State");
+        rows += row("ICAO24", s.icao24);
+        rows += row("Callsign", s.callsign.trim() || "-");
+        rows += row("Origin Country", s.origin_country);
+        rows += row("Latitude", s.latitude);
+        rows += row("Longitude", s.longitude);
+        rows += row("Baro Altitude", fmt(s.baro_altitude, "m"));
+        rows += row("Velocity", fmt(s.velocity, "m/s"));
+        rows += row("Heading", fmt(s.heading, "deg"));
+        rows += row("Vertical Rate", fmt(s.vertical_rate, "m/s"));
+        rows += row("On Ground", s.on_ground);
+        if (data.aircraft) {
+          const a = data.aircraft;
+          rows += section("Aircraft Metadata");
+          rows += row("Registration", a.Registration || "-");
+          rows += row("Manufacturer", a.ManufacturerName || "-");
+          rows += row("Type", a.Type || "-");
+          rows += row("Operator", a.OperatorFlagCode || "-");
+        }
+        rows += '</table>';
+        detailEl.innerHTML = rows;
+        detailEl.style.display = "block";
+      } catch (e) {
+        detailEl.style.display = "none";
+      }
+    }
+
+    function row(label, val) {
+      return '<tr><td>' + esc(label) + '</td><td>' + esc(String(val)) + '</td></tr>';
+    }
+    function section(name) {
+      return '<tr><td class="section" colspan="2">' + esc(name) + '</td></tr>';
+    }
+    function fmt(v, unit) {
+      return v != null && v !== 0 ? Math.round(v) + " " + unit : "-";
+    }
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    loadFlights();
+    setInterval(loadFlights, 5000);
+  </script>
+</body>
+</html>

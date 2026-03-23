@@ -27,6 +27,7 @@ type Config struct {
 	PollInterval string         `hcl:"poll_interval"`
 	Redis        RedisConfig    `hcl:"redis,block"`
 	Postgres     PostgresConfig `hcl:"postgres,block"`
+	Server       *ServerConfig  `hcl:"server,block"`
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -52,6 +53,11 @@ type RedisConfig struct {
 // PostgresConfig holds connection parameters for PostgreSQL.
 type PostgresConfig struct {
 	DSN string `hcl:"dsn"`
+}
+
+// ServerConfig holds settings for the optional web dashboard HTTP server.
+type ServerConfig struct {
+	Listen string `hcl:"listen,optional"`
 }
 
 // -------------------------------------------------------------------------

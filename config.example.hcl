@@ -27,3 +27,7 @@ redis {
 postgres {
   dsn = "postgres://flight_fetcher:flight_fetcher@postgres:5432/flight_fetcher?sslmode=disable"
 }
+
+server {
+  listen = ":8080"
+}
