@@ -54,14 +54,18 @@ lint: ## Run Go linter
 test: ## Run Go tests with coverage
 	go test -race -cover ./...
 
+build: ## Build the flight-fetcher binary
+	CGO_ENABLED=0 go build -o flight-fetcher ./cmd/server
+
 run: ## Build and run the full stack via docker-compose (requires config.hcl)
 	docker compose up --build
 
 stop: ## Stop the docker-compose stack
 	docker compose down
 
-clean: ## Stop the stack and remove volumes
+clean: ## Stop the stack, remove volumes, and remove the binary
 	docker compose down -v
+	rm -f flight-fetcher
 
 # -------------------------------------------------------------------------
 # DOCKER
@@ -77,5 +81,5 @@ push: ## Build and push multi-arch images to registry
 	  --output type=image,push=true \
 	  .
 
-.PHONY: help generate migration vet govulncheck lint test run stop clean push
+.PHONY: help generate migration vet govulncheck lint test build run stop clean push
 .DEFAULT_GOAL := help

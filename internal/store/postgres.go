@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/store/migrations"
 	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
@@ -108,6 +109,40 @@ func (p *PostgresStore) LogSighting(ctx context.Context, icao24 string, lat, lon
 			Valid: true,
 		},
 	})
+}
+
+// SaveFlightRoute caches flight route information, upserting by callsign.
+func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *airlabs.FlightRoute) error {
+	return p.queries.UpsertFlightRoute(ctx, db.UpsertFlightRouteParams{
+		Callsign: route.FlightICAO,
+		DepIata:  route.DepIATA,
+		DepIcao:  route.DepICAO,
+		DepName:  route.DepName,
+		ArrIata:  route.ArrIATA,
+		ArrIcao:  route.ArrICAO,
+		ArrName:  route.ArrName,
+	})
+}
+
+// GetFlightRoute retrieves cached route information by callsign. Returns nil
+// if the route has not been looked up yet.
+func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error) {
+	row, err := p.queries.GetFlightRoute(ctx, callsign)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &airlabs.FlightRoute{
+		FlightICAO: row.Callsign,
+		DepIATA:    row.DepIata,
+		DepICAO:    row.DepIcao,
+		DepName:    row.DepName,
+		ArrIATA:    row.ArrIata,
+		ArrICAO:    row.ArrIcao,
+		ArrName:    row.ArrName,
+	}, nil
 }
 
 // Close shuts down the PostgreSQL connection pool.

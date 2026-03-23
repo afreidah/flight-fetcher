@@ -71,6 +71,9 @@ postgres {
 	if cfg.Server != nil {
 		t.Error("Server should be nil when block is omitted")
 	}
+	if cfg.AirLabs != nil {
+		t.Error("AirLabs should be nil when block is omitted")
+	}
 }
 
 // TestLoad_WithServerBlock verifies that the optional server block is parsed correctly.
@@ -111,6 +114,47 @@ server {
 	}
 	if cfg.Server.Listen != ":8080" {
 		t.Errorf("Server.Listen = %q, want %q", cfg.Server.Listen, ":8080")
+	}
+}
+
+// TestLoad_WithAirLabsBlock verifies that the optional airlabs block is parsed correctly.
+func TestLoad_WithAirLabsBlock(t *testing.T) {
+	content := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+opensky {
+  id     = "test-client"
+  secret = "test-secret"
+}
+
+poll_interval = "20s"
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+
+airlabs {
+  api_key = "test-key-123"
+}
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AirLabs == nil {
+		t.Fatal("AirLabs should not be nil when block is present")
+	}
+	if cfg.AirLabs.APIKey != "test-key-123" {
+		t.Errorf("AirLabs.APIKey = %q, want %q", cfg.AirLabs.APIKey, "test-key-123")
 	}
 }
 

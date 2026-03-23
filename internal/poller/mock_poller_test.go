@@ -170,3 +170,15 @@ func (mr *MockFlightEnricherMockRecorder) Enrich(ctx, icao24 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Enrich", reflect.TypeOf((*MockFlightEnricher)(nil).Enrich), ctx, icao24)
 }
+
+// EnrichRoute mocks base method.
+func (m *MockFlightEnricher) EnrichRoute(ctx context.Context, callsign string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "EnrichRoute", ctx, callsign)
+}
+
+// EnrichRoute indicates an expected call of EnrichRoute.
+func (mr *MockFlightEnricherMockRecorder) EnrichRoute(ctx, callsign any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnrichRoute", reflect.TypeOf((*MockFlightEnricher)(nil).EnrichRoute), ctx, callsign)
+}

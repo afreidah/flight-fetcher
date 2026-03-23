@@ -3,8 +3,9 @@
 #
 # Project: Flight Fetcher / Author: Alex Freidah
 #
-# Copy this file to config.hcl and fill in your OpenSky Network credentials.
-# Register at https://opensky-network.org to get free API access.
+# Copy this file to config.hcl and fill in your credentials.
+# Register at https://opensky-network.org for OpenSky API access.
+# Register at https://airlabs.co for AirLabs flight route data (optional).
 # -------------------------------------------------------------------------------
 
 location {
@@ -30,4 +31,8 @@ postgres {
 
 server {
   listen = ":8080"
+}
+
+airlabs {
+  api_key = "YOUR_API_KEY"
 }

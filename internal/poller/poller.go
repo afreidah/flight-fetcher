@@ -14,6 +14,7 @@ package poller
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -41,9 +42,10 @@ type SightingLogger interface {
 	LogSighting(ctx context.Context, icao24 string, lat, lon, distanceKm float64) error
 }
 
-// FlightEnricher enriches aircraft metadata for newly seen ICAO24 codes.
+// FlightEnricher enriches aircraft metadata and flight route information.
 type FlightEnricher interface {
 	Enrich(ctx context.Context, icao24 string) bool
+	EnrichRoute(ctx context.Context, callsign string)
 }
 
 // -------------------------------------------------------------------------
@@ -143,6 +145,9 @@ func (p *Poller) poll(ctx context.Context) {
 		}
 
 		p.enricher.Enrich(ctx, sv.ICAO24)
+		if callsign := strings.TrimSpace(sv.Callsign); callsign != "" {
+			p.enricher.EnrichRoute(ctx, callsign)
+		}
 		count++
 	}
 

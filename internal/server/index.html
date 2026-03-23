@@ -102,6 +102,12 @@
         rows += row("Heading", fmt(s.heading, "deg"));
         rows += row("Vertical Rate", fmt(s.vertical_rate, "m/s"));
         rows += row("On Ground", s.on_ground);
+        if (data.route) {
+          const r = data.route;
+          rows += section("Route");
+          rows += row("From", r.dep_iata ? r.dep_iata + " - " + (r.dep_name || "") : "-");
+          rows += row("To", r.arr_iata ? r.arr_iata + " - " + (r.arr_name || "") : "-");
+        }
         if (data.aircraft) {
           const a = data.aircraft;
           rows += section("Aircraft Metadata");

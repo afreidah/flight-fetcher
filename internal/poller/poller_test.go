@@ -35,8 +35,8 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 	resp := &opensky.StatesResponse{
 		Time: 1234,
 		States: []opensky.StateVector{
-			{ICAO24: "inside", Latitude: 34.09, Longitude: -118.33},
-			{ICAO24: "outside", Latitude: 35.50, Longitude: -118.33},
+			{ICAO24: "inside", Callsign: "UAL123", Latitude: 34.09, Longitude: -118.33},
+			{ICAO24: "outside", Callsign: "DAL456", Latitude: 35.50, Longitude: -118.33},
 		},
 	}
 
@@ -54,6 +54,9 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 	enricher.EXPECT().
 		Enrich(gomock.Any(), "inside").
 		Return(true).
+		Times(1)
+	enricher.EXPECT().
+		EnrichRoute(gomock.Any(), gomock.Any()).
 		Times(1)
 
 	p := New(source, cache, logger, enricher, center, radiusKm, time.Minute)
@@ -91,7 +94,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	resp := &opensky.StatesResponse{
 		Time: 1234,
 		States: []opensky.StateVector{
-			{ICAO24: "abc123", Latitude: 34.09, Longitude: -118.33},
+			{ICAO24: "abc123", Callsign: "AAL100", Latitude: 34.09, Longitude: -118.33},
 		},
 	}
 
@@ -107,6 +110,8 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	enricher.EXPECT().
 		Enrich(gomock.Any(), "abc123").
 		Return(true)
+	enricher.EXPECT().
+		EnrichRoute(gomock.Any(), gomock.Any())
 
 	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
 	p.poll(context.Background())
@@ -125,7 +130,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	resp := &opensky.StatesResponse{
 		Time: 1234,
 		States: []opensky.StateVector{
-			{ICAO24: "abc123", Latitude: 34.09, Longitude: -118.33},
+			{ICAO24: "abc123", Callsign: "AAL100", Latitude: 34.09, Longitude: -118.33},
 		},
 	}
 
@@ -141,6 +146,8 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	enricher.EXPECT().
 		Enrich(gomock.Any(), "abc123").
 		Return(true)
+	enricher.EXPECT().
+		EnrichRoute(gomock.Any(), gomock.Any())
 
 	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
 	p.poll(context.Background())
