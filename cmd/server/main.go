@@ -49,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	oskyClient := opensky.NewClient(cfg.OpenSky.Username, cfg.OpenSky.Password)
+	oskyClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 	hexdbClient := hexdb.NewClient()
 
 	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)

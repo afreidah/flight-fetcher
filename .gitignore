@@ -1,6 +1,7 @@
 /flight-fetcher
 *.hcl
 !deploy/*.hcl
+!config.example.hcl
 .env
 coverage.out
 dist/

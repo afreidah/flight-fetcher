@@ -4,7 +4,7 @@
 // Project: Flight Fetcher / Author: Alex Freidah
 //
 // HTTP client for the OpenSky Network REST API. Queries aircraft state vectors
-// within a geographic bounding box using basic authentication. Parses the raw
+// within a geographic bounding box using API client credentials. Parses the raw
 // heterogeneous JSON arrays into typed StateVector structs.
 // -------------------------------------------------------------------------------
 
@@ -26,8 +26,8 @@ import (
 // Client communicates with the OpenSky Network API.
 type Client struct {
 	httpClient *http.Client
-	username   string
-	password   string
+	clientID   string
+	clientSecret string
 	baseURL    string
 }
 
@@ -35,13 +35,13 @@ type Client struct {
 // PUBLIC API
 // -------------------------------------------------------------------------
 
-// NewClient creates an OpenSky API client with the given credentials.
-func NewClient(username, password string) *Client {
+// NewClient creates an OpenSky API client with the given API client credentials.
+func NewClient(clientID, clientSecret string) *Client {
 	return &Client{
-		httpClient: &http.Client{},
-		username:   username,
-		password:   password,
-		baseURL:    "https://opensky-network.org/api",
+		httpClient:   &http.Client{},
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		baseURL:      "https://opensky-network.org/api",
 	}
 }
 
@@ -55,8 +55,8 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
+	if c.clientID != "" {
+		req.SetBasicAuth(c.clientID, c.clientSecret)
 	}
 
 	resp, err := c.httpClient.Do(req)
