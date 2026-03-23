@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // -------------------------------------------------------------------------
@@ -34,7 +35,7 @@ type Client struct {
 // NewClient creates a HexDB.io API client.
 func NewClient() *Client {
 	return &Client{
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 		baseURL:    "https://hexdb.io/api/v1",
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // -------------------------------------------------------------------------
@@ -41,7 +42,7 @@ type apiResponse struct {
 // NewClient creates an AirLabs API client with the given API key.
 func NewClient(apiKey string) *Client {
 	return &Client{
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 		apiKey:     apiKey,
 		baseURL:    "https://airlabs.co/api/v9",
 	}
