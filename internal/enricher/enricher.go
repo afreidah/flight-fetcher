@@ -96,8 +96,15 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		return true
 	}
 	if info == nil {
-		slog.InfoContext(ctx, "no hexdb data found",
+		slog.DebugContext(ctx, "no hexdb data found",
 			slog.String("icao24", icao24))
+		// Cache a sentinel so we don't look this up again
+		sentinel := &hexdb.AircraftInfo{ICAO24: icao24}
+		if err := e.store.SaveAircraftMeta(ctx, sentinel); err != nil {
+			slog.WarnContext(ctx, "failed to save aircraft sentinel",
+				slog.String("icao24", icao24),
+				slog.String("error", err.Error()))
+		}
 		return true
 	}
 
@@ -135,8 +142,15 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) {
 		return
 	}
 	if route == nil {
-		slog.InfoContext(ctx, "no route data found",
+		slog.DebugContext(ctx, "no route data found",
 			slog.String("callsign", callsign))
+		// Cache a sentinel so we don't look this up again
+		sentinel := &airlabs.FlightRoute{FlightICAO: callsign}
+		if err := e.routeStore.SaveFlightRoute(ctx, sentinel); err != nil {
+			slog.WarnContext(ctx, "failed to save route sentinel",
+				slog.String("callsign", callsign),
+				slog.String("error", err.Error()))
+		}
 		return
 	}
 

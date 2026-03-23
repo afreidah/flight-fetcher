@@ -61,6 +61,7 @@ type Server struct {
 	routes   RouteReader
 	alerts   SquawkAlertReader
 	version  string
+	refresh  int
 	mux      *http.ServeMux
 }
 
@@ -75,14 +76,16 @@ type flightDetail struct {
 // PUBLIC API
 // -------------------------------------------------------------------------
 
-// New creates a Server with the given data sources and version string.
-func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader, alerts SquawkAlertReader, version string) *Server {
+// New creates a Server with the given data sources, version string, and
+// dashboard refresh interval in seconds.
+func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader, alerts SquawkAlertReader, version string, refreshSec int) *Server {
 	s := &Server{
 		flights:  flights,
 		aircraft: aircraft,
 		routes:   routes,
 		alerts:   alerts,
 		version:  version,
+		refresh:  refreshSec,
 		mux:      http.NewServeMux(),
 	}
 	s.mux.HandleFunc("GET /", s.handleIndex)
@@ -118,7 +121,7 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) {
 // handleIndex serves the embedded HTML dashboard page.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := w.Write(renderedHTML(s.version)); err != nil {
+	if _, err := w.Write(renderedHTML(s.version, s.refresh)); err != nil {
 		slog.WarnContext(r.Context(), "failed to write index page",
 			slog.String("error", err.Error()))
 	}
@@ -160,6 +163,9 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 			slog.String("icao24", icao24),
 			slog.String("error", err.Error()))
 	}
+	if meta != nil && meta.Registration == "" && meta.ManufacturerName == "" && meta.Type == "" {
+		meta = nil
+	}
 	detail.Aircraft = meta
 
 	if s.routes != nil && sv.Callsign != "" {
@@ -168,6 +174,9 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 			slog.WarnContext(r.Context(), "api: route lookup failed",
 				slog.String("icao24", icao24),
 				slog.String("error", err.Error()))
+		}
+		if route != nil && route.DepIATA == "" && route.ArrIATA == "" {
+			route = nil
 		}
 		detail.Route = route
 	}
@@ -202,7 +211,7 @@ func (s *Server) handleGetAircraft(w http.ResponseWriter, r *http.Request) {
 			slog.String("error", err.Error()))
 		return
 	}
-	if meta == nil {
+	if meta == nil || (meta.Registration == "" && meta.ManufacturerName == "" && meta.Type == "") {
 		http.Error(w, "aircraft not found", http.StatusNotFound)
 		return
 	}
@@ -224,7 +233,7 @@ func (s *Server) handleGetRoute(w http.ResponseWriter, r *http.Request) {
 			slog.String("error", err.Error()))
 		return
 	}
-	if route == nil {
+	if route == nil || (route.DepIATA == "" && route.ArrIATA == "") {
 		http.Error(w, "route not found", http.StatusNotFound)
 		return
 	}

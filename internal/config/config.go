@@ -60,7 +60,17 @@ type PostgresConfig struct {
 
 // ServerConfig holds settings for the optional web dashboard HTTP server.
 type ServerConfig struct {
-	Listen string `hcl:"listen,optional"`
+	Listen  string `hcl:"listen,optional"`
+	Refresh int    `hcl:"refresh,optional"`
+}
+
+// RefreshSeconds returns the dashboard refresh interval in seconds.
+// Defaults to 5 if not set or zero.
+func (c *ServerConfig) RefreshSeconds() int {
+	if c.Refresh <= 0 {
+		return 5
+	}
+	return c.Refresh
 }
 
 // AirLabsConfig holds credentials for the AirLabs flight data API.

@@ -6,7 +6,7 @@
   <title>Flight Fetcher</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #faf5f5; color: #4a4055; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #efe3e5; color: #4a4055; }
     h1 { padding: 1rem; font-size: 1.25rem; background: #f9e4e4; border-bottom: 1px solid #f0c6c6; color: #6b4c5a; margin-bottom: 1rem; }
     h1 .version { font-size: 0.8rem; color: #b89aa6; font-weight: 400; margin-left: 0.75rem; }
     h2 { font-size: 1rem; padding: 0.75rem 1rem 0.5rem; color: #8e7a8a; }
@@ -14,7 +14,7 @@
 
     .row {
       margin: 0 0.5rem 3px;
-      background: #fff;
+      background: #faf5f6;
       border: 1px solid #f0d4d8;
       border-radius: 8px;
       overflow: hidden;
@@ -243,10 +243,11 @@
       return d.innerHTML;
     }
 
+    var refreshSec = {{REFRESH}};
     loadFlights();
     loadSquawkAlerts();
-    setInterval(loadFlights, 5000);
-    setInterval(loadSquawkAlerts, 30000);
+    setInterval(loadFlights, refreshSec * 1000);
+    setInterval(loadSquawkAlerts, refreshSec * 6000);
   </script>
 </body>
 </html>
