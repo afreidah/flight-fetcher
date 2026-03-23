@@ -16,6 +16,16 @@ type AircraftMetum struct {
 	Operator     string
 }
 
+type FlightRoute struct {
+	Callsign string
+	DepIata  string
+	DepIcao  string
+	DepName  string
+	ArrIata  string
+	ArrIcao  string
+	ArrName  string
+}
+
 type Sighting struct {
 	ID         int64
 	Icao24     string

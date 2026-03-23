@@ -28,6 +28,7 @@ type Config struct {
 	Redis        RedisConfig    `hcl:"redis,block"`
 	Postgres     PostgresConfig `hcl:"postgres,block"`
 	Server       *ServerConfig  `hcl:"server,block"`
+	AirLabs      *AirLabsConfig `hcl:"airlabs,block"`
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -58,6 +59,11 @@ type PostgresConfig struct {
 // ServerConfig holds settings for the optional web dashboard HTTP server.
 type ServerConfig struct {
 	Listen string `hcl:"listen,optional"`
+}
+
+// AirLabsConfig holds credentials for the AirLabs flight data API.
+type AirLabsConfig struct {
+	APIKey string `hcl:"api_key"`
 }
 
 // -------------------------------------------------------------------------

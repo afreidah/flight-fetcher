@@ -3,8 +3,8 @@
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// Tests aircraft metadata enrichment logic: cache hits, new aircraft lookups,
-// missing HexDB data, and error handling for store and lookup failures.
+// Tests aircraft metadata enrichment and flight route enrichment: cache hits,
+// new lookups, missing data, error handling, and disabled route enrichment.
 // -------------------------------------------------------------------------------
 
 package enricher
@@ -14,10 +14,15 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 
 	"go.uber.org/mock/gomock"
 )
+
+// -------------------------------------------------------------------------
+// AIRCRAFT METADATA TESTS
+// -------------------------------------------------------------------------
 
 // TestEnrich_AlreadyCached verifies that a cached aircraft returns false (not new).
 func TestEnrich_AlreadyCached(t *testing.T) {
@@ -29,7 +34,7 @@ func TestEnrich_AlreadyCached(t *testing.T) {
 		GetAircraftMeta(gomock.Any(), "abc123").
 		Return(&hexdb.AircraftInfo{ICAO24: "abc123"}, nil)
 
-	enr := New(lookup, store)
+	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
 	if got != false {
 		t.Errorf("Enrich() = %v, want false for already cached aircraft", got)
@@ -60,7 +65,7 @@ func TestEnrich_NewAircraft_LookupSuccess(t *testing.T) {
 		SaveAircraftMeta(gomock.Any(), info).
 		Return(nil)
 
-	enr := New(lookup, store)
+	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
 	if got != true {
 		t.Errorf("Enrich() = %v, want true for new aircraft", got)
@@ -80,7 +85,7 @@ func TestEnrich_NewAircraft_NotInHexDB(t *testing.T) {
 		Lookup(gomock.Any(), "abc123").
 		Return(nil, nil)
 
-	enr := New(lookup, store)
+	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
 	if got != true {
 		t.Errorf("Enrich() = %v, want true for new aircraft not in hexdb", got)
@@ -97,7 +102,7 @@ func TestEnrich_StoreGetError(t *testing.T) {
 		GetAircraftMeta(gomock.Any(), "abc123").
 		Return(nil, errors.New("db down"))
 
-	enr := New(lookup, store)
+	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
 	if got != false {
 		t.Errorf("Enrich() = %v, want false when store read fails", got)
@@ -117,7 +122,7 @@ func TestEnrich_LookupError(t *testing.T) {
 		Lookup(gomock.Any(), "abc123").
 		Return(nil, errors.New("timeout"))
 
-	enr := New(lookup, store)
+	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
 	if got != true {
 		t.Errorf("Enrich() = %v, want true when lookup fails (still a new aircraft)", got)
@@ -142,9 +147,131 @@ func TestEnrich_SaveError(t *testing.T) {
 		SaveAircraftMeta(gomock.Any(), info).
 		Return(errors.New("write failed"))
 
-	enr := New(lookup, store)
+	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
 	if got != true {
 		t.Errorf("Enrich() = %v, want true even when save fails", got)
 	}
+}
+
+// -------------------------------------------------------------------------
+// ROUTE ENRICHMENT TESTS
+// -------------------------------------------------------------------------
+
+// TestEnrichRoute_Disabled verifies that EnrichRoute is a no-op when not configured.
+func TestEnrichRoute_Disabled(t *testing.T) {
+	enr := New(nil, nil, nil, nil)
+	enr.EnrichRoute(context.Background(), "AAL2079")
+}
+
+// TestEnrichRoute_AlreadyCached verifies that a cached route does not trigger a lookup.
+func TestEnrichRoute_AlreadyCached(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	routeStore := NewMockRouteStore(ctrl)
+	routeLookup := NewMockRouteLookup(ctrl)
+
+	routeStore.EXPECT().
+		GetFlightRoute(gomock.Any(), "AAL2079").
+		Return(&airlabs.FlightRoute{FlightICAO: "AAL2079"}, nil)
+
+	enr := New(nil, nil, routeLookup, routeStore)
+	enr.EnrichRoute(context.Background(), "AAL2079")
+}
+
+// TestEnrichRoute_NewRoute_LookupSuccess verifies that a new route is looked up and saved.
+func TestEnrichRoute_NewRoute_LookupSuccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	routeStore := NewMockRouteStore(ctrl)
+	routeLookup := NewMockRouteLookup(ctrl)
+
+	route := &airlabs.FlightRoute{
+		FlightICAO: "AAL2079",
+		DepIATA:    "LAX",
+		DepICAO:    "KLAX",
+		ArrIATA:    "DFW",
+		ArrICAO:    "KDFW",
+	}
+
+	routeStore.EXPECT().
+		GetFlightRoute(gomock.Any(), "AAL2079").
+		Return(nil, nil)
+	routeLookup.EXPECT().
+		LookupRoute(gomock.Any(), "AAL2079").
+		Return(route, nil)
+	routeStore.EXPECT().
+		SaveFlightRoute(gomock.Any(), route).
+		Return(nil)
+
+	enr := New(nil, nil, routeLookup, routeStore)
+	enr.EnrichRoute(context.Background(), "AAL2079")
+}
+
+// TestEnrichRoute_NotFound verifies that a missing route does not cause an error.
+func TestEnrichRoute_NotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	routeStore := NewMockRouteStore(ctrl)
+	routeLookup := NewMockRouteLookup(ctrl)
+
+	routeStore.EXPECT().
+		GetFlightRoute(gomock.Any(), "AAL2079").
+		Return(nil, nil)
+	routeLookup.EXPECT().
+		LookupRoute(gomock.Any(), "AAL2079").
+		Return(nil, nil)
+
+	enr := New(nil, nil, routeLookup, routeStore)
+	enr.EnrichRoute(context.Background(), "AAL2079")
+}
+
+// TestEnrichRoute_LookupError verifies that a lookup failure is handled gracefully.
+func TestEnrichRoute_LookupError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	routeStore := NewMockRouteStore(ctrl)
+	routeLookup := NewMockRouteLookup(ctrl)
+
+	routeStore.EXPECT().
+		GetFlightRoute(gomock.Any(), "AAL2079").
+		Return(nil, nil)
+	routeLookup.EXPECT().
+		LookupRoute(gomock.Any(), "AAL2079").
+		Return(nil, errors.New("timeout"))
+
+	enr := New(nil, nil, routeLookup, routeStore)
+	enr.EnrichRoute(context.Background(), "AAL2079")
+}
+
+// TestEnrichRoute_SaveError verifies that a save failure is handled gracefully.
+func TestEnrichRoute_SaveError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	routeStore := NewMockRouteStore(ctrl)
+	routeLookup := NewMockRouteLookup(ctrl)
+
+	route := &airlabs.FlightRoute{FlightICAO: "AAL2079", DepIATA: "LAX"}
+
+	routeStore.EXPECT().
+		GetFlightRoute(gomock.Any(), "AAL2079").
+		Return(nil, nil)
+	routeLookup.EXPECT().
+		LookupRoute(gomock.Any(), "AAL2079").
+		Return(route, nil)
+	routeStore.EXPECT().
+		SaveFlightRoute(gomock.Any(), route).
+		Return(errors.New("write failed"))
+
+	enr := New(nil, nil, routeLookup, routeStore)
+	enr.EnrichRoute(context.Background(), "AAL2079")
+}
+
+// TestEnrichRoute_StoreGetError verifies that a store read failure is handled gracefully.
+func TestEnrichRoute_StoreGetError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	routeStore := NewMockRouteStore(ctrl)
+	routeLookup := NewMockRouteLookup(ctrl)
+
+	routeStore.EXPECT().
+		GetFlightRoute(gomock.Any(), "AAL2079").
+		Return(nil, errors.New("db down"))
+
+	enr := New(nil, nil, routeLookup, routeStore)
+	enr.EnrichRoute(context.Background(), "AAL2079")
 }

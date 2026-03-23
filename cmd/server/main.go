@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/config"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -63,7 +64,15 @@ func main() {
 	}
 	defer pgStore.Close()
 
-	enr := enricher.New(hexdbClient, pgStore)
+	var routeLookup enricher.RouteLookup
+	var routeStore enricher.RouteStore
+	if cfg.AirLabs != nil && cfg.AirLabs.APIKey != "" {
+		routeLookup = airlabs.NewClient(cfg.AirLabs.APIKey)
+		routeStore = pgStore
+		slog.InfoContext(ctx, "airlabs route enrichment enabled")
+	}
+
+	enr := enricher.New(hexdbClient, pgStore, routeLookup, routeStore)
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
 	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval)
 
@@ -72,7 +81,7 @@ func main() {
 	defer cancel()
 
 	if cfg.Server != nil && cfg.Server.Listen != "" {
-		srv := server.New(redisStore, pgStore)
+		srv := server.New(redisStore, pgStore, pgStore)
 		go srv.ListenAndServe(ctx, cfg.Server.Listen)
 	}
 

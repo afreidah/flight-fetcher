@@ -15,7 +15,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
+	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 )
@@ -35,6 +37,11 @@ type AircraftMetaReader interface {
 	GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error)
 }
 
+// RouteReader retrieves cached flight route information by callsign.
+type RouteReader interface {
+	GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error)
+}
+
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
@@ -43,13 +50,15 @@ type AircraftMetaReader interface {
 type Server struct {
 	flights  FlightLister
 	aircraft AircraftMetaReader
+	routes   RouteReader
 	mux      *http.ServeMux
 }
 
-// flightDetail combines live state and enriched metadata for a single aircraft.
+// flightDetail combines live state, enriched metadata, and route information.
 type flightDetail struct {
 	State    *opensky.StateVector `json:"state"`
 	Aircraft *hexdb.AircraftInfo  `json:"aircraft,omitempty"`
+	Route    *airlabs.FlightRoute `json:"route,omitempty"`
 }
 
 // -------------------------------------------------------------------------
@@ -57,10 +66,11 @@ type flightDetail struct {
 // -------------------------------------------------------------------------
 
 // New creates a Server with the given data sources.
-func New(flights FlightLister, aircraft AircraftMetaReader) *Server {
+func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader) *Server {
 	s := &Server{
 		flights:  flights,
 		aircraft: aircraft,
+		routes:   routes,
 		mux:      http.NewServeMux(),
 	}
 	s.mux.HandleFunc("GET /", s.handleIndex)
@@ -136,6 +146,16 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 			slog.String("error", err.Error()))
 	}
 	detail.Aircraft = meta
+
+	if s.routes != nil && sv.Callsign != "" {
+		route, err := s.routes.GetFlightRoute(r.Context(), strings.TrimSpace(sv.Callsign))
+		if err != nil {
+			slog.WarnContext(r.Context(), "api: route lookup failed",
+				slog.String("icao24", icao24),
+				slog.String("error", err.Error()))
+		}
+		detail.Route = route
+	}
 
 	writeJSON(r.Context(), w, detail)
 }
