@@ -68,6 +68,50 @@ postgres {
 	if cfg.Postgres.DSN != "postgres://user:pass@localhost:5432/testdb?sslmode=disable" {
 		t.Errorf("Postgres.DSN = %q", cfg.Postgres.DSN)
 	}
+	if cfg.Server != nil {
+		t.Error("Server should be nil when block is omitted")
+	}
+}
+
+// TestLoad_WithServerBlock verifies that the optional server block is parsed correctly.
+func TestLoad_WithServerBlock(t *testing.T) {
+	content := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+opensky {
+  id     = "test-client"
+  secret = "test-secret"
+}
+
+poll_interval = "20s"
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+
+server {
+  listen = ":8080"
+}
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Server == nil {
+		t.Fatal("Server should not be nil when block is present")
+	}
+	if cfg.Server.Listen != ":8080" {
+		t.Errorf("Server.Listen = %q, want %q", cfg.Server.Listen, ":8080")
+	}
 }
 
 // TestLoad_MissingFile verifies that loading a nonexistent file returns an error.

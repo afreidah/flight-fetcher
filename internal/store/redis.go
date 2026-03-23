@@ -66,6 +66,28 @@ func (r *RedisStore) SetFlight(ctx context.Context, sv *opensky.StateVector) err
 	return r.client.Set(ctx, key, data, defaultTTL).Err()
 }
 
+// GetAllFlights returns all current flight states stored in Redis.
+func (r *RedisStore) GetAllFlights(ctx context.Context) ([]opensky.StateVector, error) {
+	keys, err := r.client.Keys(ctx, flightKeyPrefix+"*").Result()
+	if err != nil {
+		return nil, err
+	}
+
+	flights := make([]opensky.StateVector, 0, len(keys))
+	for _, key := range keys {
+		data, err := r.client.Get(ctx, key).Bytes()
+		if err != nil {
+			continue
+		}
+		var sv opensky.StateVector
+		if err := json.Unmarshal(data, &sv); err != nil {
+			continue
+		}
+		flights = append(flights, sv)
+	}
+	return flights, nil
+}
+
 // GetFlight retrieves the current state of a flight by ICAO24. Returns nil
 // if the flight is not in Redis (expired or never seen).
 func (r *RedisStore) GetFlight(ctx context.Context, icao24 string) (*opensky.StateVector, error) {

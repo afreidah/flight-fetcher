@@ -24,6 +24,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/poller"
+	"github.com/afreidah/flight-fetcher/internal/server"
 	"github.com/afreidah/flight-fetcher/internal/store"
 )
 
@@ -69,6 +70,11 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	if cfg.Server != nil && cfg.Server.Listen != "" {
+		srv := server.New(redisStore, pgStore)
+		go srv.ListenAndServe(ctx, cfg.Server.Listen)
+	}
 
 	p.Run(ctx)
 }
