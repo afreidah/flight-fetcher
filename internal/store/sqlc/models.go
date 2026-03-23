@@ -34,3 +34,13 @@ type Sighting struct {
 	DistanceKm float64
 	SeenAt     pgtype.Timestamptz
 }
+
+type SquawkAlert struct {
+	ID       int64
+	Icao24   string
+	Callsign string
+	Squawk   string
+	Lat      float64
+	Lon      float64
+	SeenAt   pgtype.Timestamptz
+}

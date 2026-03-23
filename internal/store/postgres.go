@@ -145,6 +145,29 @@ func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*a
 	}, nil
 }
 
+// InsertSquawkAlert records an emergency squawk detection.
+func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign, squawk string, lat, lon float64) error {
+	return p.queries.InsertSquawkAlert(ctx, db.InsertSquawkAlertParams{
+		Icao24:   icao24,
+		Callsign: callsign,
+		Squawk:   squawk,
+		Lat:      lat,
+		Lon:      lon,
+		SeenAt: pgtype.Timestamptz{
+			Time:  time.Now().UTC(),
+			Valid: true,
+		},
+	})
+}
+
+// GetRecentSquawkAlerts returns squawk alerts from the last given duration.
+func (p *PostgresStore) GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]db.SquawkAlert, error) {
+	return p.queries.GetRecentSquawkAlerts(ctx, pgtype.Timestamptz{
+		Time:  time.Now().UTC().Add(-since),
+		Valid: true,
+	})
+}
+
 // Close shuts down the PostgreSQL connection pool.
 func (p *PostgresStore) Close() {
 	p.pool.Close()

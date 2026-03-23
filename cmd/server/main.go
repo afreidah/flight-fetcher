@@ -26,6 +26,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/poller"
 	"github.com/afreidah/flight-fetcher/internal/server"
+	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/store"
 )
 
@@ -81,8 +82,19 @@ func main() {
 	defer cancel()
 
 	if cfg.Server != nil && cfg.Server.Listen != "" {
-		srv := server.New(redisStore, pgStore, pgStore)
+		srv := server.New(redisStore, pgStore, pgStore, pgStore)
 		go srv.ListenAndServe(ctx, cfg.Server.Listen)
+	}
+
+	if cfg.SquawkMonitor != nil {
+		interval, err := cfg.SquawkMonitor.SquawkMonitorDuration()
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to parse squawk monitor interval",
+				slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		sm := squawk.New(oskyClient, pgStore, enr, interval)
+		go sm.Run(ctx)
 	}
 
 	p.Run(ctx)

@@ -17,9 +17,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"time"
+
 	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
+
+	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // -------------------------------------------------------------------------
@@ -65,13 +71,24 @@ func (s *stubRouteReader) GetFlightRoute(_ context.Context, _ string) (*airlabs.
 	return s.route, s.err
 }
 
+// stubAlertReader is a minimal SquawkAlertReader for testing.
+type stubAlertReader struct {
+	alerts []db.SquawkAlert
+	err    error
+}
+
+// GetRecentSquawkAlerts returns the stubbed alerts.
+func (s *stubAlertReader) GetRecentSquawkAlerts(_ context.Context, _ time.Duration) ([]db.SquawkAlert, error) {
+	return s.alerts, s.err
+}
+
 // -------------------------------------------------------------------------
 // TESTS
 // -------------------------------------------------------------------------
 
 // TestHandleIndex verifies that the index page returns HTML.
 func TestHandleIndex(t *testing.T) {
-	srv := New(&stubFlightLister{}, &stubMetaReader{}, nil)
+	srv := New(&stubFlightLister{}, &stubMetaReader{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
@@ -95,7 +112,7 @@ func TestHandleListFlights_Success(t *testing.T) {
 		{ICAO24: "abc123", Callsign: "UAL123", Latitude: 34.09, Longitude: -118.33},
 		{ICAO24: "def456", Callsign: "DAL456", Latitude: 34.10, Longitude: -118.34},
 	}
-	srv := New(&stubFlightLister{flights: flights}, &stubMetaReader{}, nil)
+	srv := New(&stubFlightLister{flights: flights}, &stubMetaReader{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights", nil)
 	w := httptest.NewRecorder()
 
@@ -115,7 +132,7 @@ func TestHandleListFlights_Success(t *testing.T) {
 
 // TestHandleListFlights_Error verifies that a store error returns 500.
 func TestHandleListFlights_Error(t *testing.T) {
-	srv := New(&stubFlightLister{err: errors.New("redis down")}, &stubMetaReader{}, nil)
+	srv := New(&stubFlightLister{err: errors.New("redis down")}, &stubMetaReader{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights", nil)
 	w := httptest.NewRecorder()
 
@@ -128,7 +145,7 @@ func TestHandleListFlights_Error(t *testing.T) {
 
 // TestHandleListFlights_Empty verifies that an empty flight list returns an empty JSON array.
 func TestHandleListFlights_Empty(t *testing.T) {
-	srv := New(&stubFlightLister{flights: []opensky.StateVector{}}, &stubMetaReader{}, nil)
+	srv := New(&stubFlightLister{flights: []opensky.StateVector{}}, &stubMetaReader{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights", nil)
 	w := httptest.NewRecorder()
 
@@ -153,6 +170,7 @@ func TestHandleGetFlight_WithMeta(t *testing.T) {
 	srv := New(
 		&stubFlightLister{flight: sv},
 		&stubMetaReader{info: meta},
+		nil,
 		nil,
 	)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
@@ -186,6 +204,7 @@ func TestHandleGetFlight_WithRoute(t *testing.T) {
 		&stubFlightLister{flight: sv},
 		&stubMetaReader{},
 		&stubRouteReader{route: route},
+		nil,
 	)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
 	w := httptest.NewRecorder()
@@ -217,6 +236,7 @@ func TestHandleGetFlight_NoMeta(t *testing.T) {
 		&stubFlightLister{flight: sv},
 		&stubMetaReader{info: nil},
 		nil,
+		nil,
 	)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
 	w := httptest.NewRecorder()
@@ -237,7 +257,7 @@ func TestHandleGetFlight_NoMeta(t *testing.T) {
 
 // TestHandleGetFlight_NotFound verifies that a missing flight returns 404.
 func TestHandleGetFlight_NotFound(t *testing.T) {
-	srv := New(&stubFlightLister{flight: nil}, &stubMetaReader{}, nil)
+	srv := New(&stubFlightLister{flight: nil}, &stubMetaReader{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/unknown", nil)
 	w := httptest.NewRecorder()
 
@@ -250,7 +270,7 @@ func TestHandleGetFlight_NotFound(t *testing.T) {
 
 // TestHandleGetFlight_StoreError verifies that a store error returns 500.
 func TestHandleGetFlight_StoreError(t *testing.T) {
-	srv := New(&stubFlightLister{err: errors.New("redis down")}, &stubMetaReader{}, nil)
+	srv := New(&stubFlightLister{err: errors.New("redis down")}, &stubMetaReader{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
 	w := httptest.NewRecorder()
 
@@ -267,6 +287,7 @@ func TestHandleGetFlight_MetaError(t *testing.T) {
 	srv := New(
 		&stubFlightLister{flight: sv},
 		&stubMetaReader{err: errors.New("pg down")},
+		nil,
 		nil,
 	)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
@@ -296,6 +317,7 @@ func TestHandleGetFlight_RouteError(t *testing.T) {
 		&stubFlightLister{flight: sv},
 		&stubMetaReader{},
 		&stubRouteReader{err: errors.New("pg down")},
+		nil,
 	)
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
 	w := httptest.NewRecorder()
@@ -311,5 +333,55 @@ func TestHandleGetFlight_RouteError(t *testing.T) {
 	}
 	if got.Route != nil {
 		t.Errorf("Route should be nil on route error, got %v", got.Route)
+	}
+}
+
+// TestHandleSquawkAlerts_Success verifies that squawk alerts are returned as JSON.
+func TestHandleSquawkAlerts_Success(t *testing.T) {
+	alerts := []db.SquawkAlert{
+		{ID: 1, Icao24: "a1", Callsign: "UAL123", Squawk: "7700", Lat: 34.0, Lon: -118.0,
+			SeenAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}},
+	}
+	srv := New(&stubFlightLister{}, &stubMetaReader{}, nil, &stubAlertReader{alerts: alerts})
+	req := httptest.NewRequest(http.MethodGet, "/api/squawk-alerts", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var got []db.SquawkAlert
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("len(alerts) = %d, want 1", len(got))
+	}
+}
+
+// TestHandleSquawkAlerts_Disabled verifies that nil alerts reader returns empty array.
+func TestHandleSquawkAlerts_Disabled(t *testing.T) {
+	srv := New(&stubFlightLister{}, &stubMetaReader{}, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/squawk-alerts", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// TestHandleSquawkAlerts_Error verifies that a store error returns 500.
+func TestHandleSquawkAlerts_Error(t *testing.T) {
+	srv := New(&stubFlightLister{}, &stubMetaReader{}, nil, &stubAlertReader{err: errors.New("pg down")})
+	req := httptest.NewRequest(http.MethodGet, "/api/squawk-alerts", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 }

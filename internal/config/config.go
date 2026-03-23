@@ -27,8 +27,9 @@ type Config struct {
 	PollInterval string         `hcl:"poll_interval"`
 	Redis        RedisConfig    `hcl:"redis,block"`
 	Postgres     PostgresConfig `hcl:"postgres,block"`
-	Server       *ServerConfig  `hcl:"server,block"`
-	AirLabs      *AirLabsConfig `hcl:"airlabs,block"`
+	Server       *ServerConfig       `hcl:"server,block"`
+	AirLabs      *AirLabsConfig     `hcl:"airlabs,block"`
+	SquawkMonitor *SquawkMonitorConfig `hcl:"squawk_monitor,block"`
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -66,6 +67,11 @@ type AirLabsConfig struct {
 	APIKey string `hcl:"api_key"`
 }
 
+// SquawkMonitorConfig holds settings for the global emergency squawk monitor.
+type SquawkMonitorConfig struct {
+	Interval string `hcl:"interval"`
+}
+
 // -------------------------------------------------------------------------
 // PUBLIC API
 // -------------------------------------------------------------------------
@@ -73,6 +79,11 @@ type AirLabsConfig struct {
 // PollDuration parses the PollInterval string into a time.Duration.
 func (c *Config) PollDuration() (time.Duration, error) {
 	return time.ParseDuration(c.PollInterval)
+}
+
+// SquawkMonitorDuration parses the squawk monitor interval into a time.Duration.
+func (c *SquawkMonitorConfig) SquawkMonitorDuration() (time.Duration, error) {
+	return time.ParseDuration(c.Interval)
 }
 
 // Load reads and decodes an HCL configuration file at the given path.
