@@ -31,11 +31,12 @@ type StateVector struct {
 	Heading       float64 `json:"heading"`
 	VerticalRate  float64 `json:"vertical_rate"`
 	OnGround      bool    `json:"on_ground"`
+	Squawk        string  `json:"squawk"`
 }
 
 // stateVectorMinFields is the minimum number of elements in a raw OpenSky
 // state vector array.
-const stateVectorMinFields = 12
+const stateVectorMinFields = 15
 
 // UnmarshalJSON decodes a state vector from either the OpenSky API's
 // positional JSON array format or a standard JSON object. Null fields in the
@@ -71,6 +72,7 @@ func (sv *StateVector) UnmarshalJSON(data []byte) error {
 	decodeFloat(raw[9], &sv.Velocity)
 	decodeFloat(raw[10], &sv.Heading)
 	decodeFloat(raw[11], &sv.VerticalRate)
+	decodeString(raw[14], &sv.Squawk)
 	return nil
 }
 
