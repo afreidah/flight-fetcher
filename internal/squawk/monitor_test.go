@@ -199,3 +199,27 @@ func TestScan_EmptyCallsign(t *testing.T) {
 		t.Errorf("len(routes) = %d, want 0 for empty callsign", len(enr.routes))
 	}
 }
+
+// TestScan_DeduplicatesWithinCooldown verifies that the same aircraft+squawk is only recorded once within the cooldown window.
+func TestScan_DeduplicatesWithinCooldown(t *testing.T) {
+	source := &stubSource{resp: &opensky.StatesResponse{
+		Time: 1234,
+		States: []opensky.StateVector{
+			{ICAO24: "a1", Callsign: "UAL123", Squawk: "7700", Latitude: 34.0, Longitude: -118.0},
+		},
+	}}
+	store := &stubAlertStore{}
+	enr := &stubEnricher{}
+
+	m := New(source, store, enr, time.Minute)
+	m.scan(context.Background())
+	m.scan(context.Background())
+	m.scan(context.Background())
+
+	if len(store.alerts) != 1 {
+		t.Errorf("len(alerts) = %d, want 1 (duplicates should be suppressed)", len(store.alerts))
+	}
+	if len(enr.enriched) != 1 {
+		t.Errorf("len(enriched) = %d, want 1", len(enr.enriched))
+	}
+}

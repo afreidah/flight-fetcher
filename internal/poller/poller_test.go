@@ -153,6 +153,48 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	p.poll(context.Background())
 }
 
+// TestPoll_SkipsEnrichmentOnSecondCycle verifies that already-seen aircraft are not re-enriched.
+func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	source := NewMockFlightSource(ctrl)
+	cache := NewMockFlightCache(ctrl)
+	logger := NewMockSightingLogger(ctrl)
+	enricher := NewMockFlightEnricher(ctrl)
+
+	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
+
+	resp := &opensky.StatesResponse{
+		Time: 1234,
+		States: []opensky.StateVector{
+			{ICAO24: "abc123", Callsign: "AAL100", Latitude: 34.09, Longitude: -118.33},
+		},
+	}
+
+	source.EXPECT().
+		GetStates(gomock.Any(), gomock.Any()).
+		Return(resp, nil).
+		Times(2)
+	cache.EXPECT().
+		SetFlight(gomock.Any(), gomock.Any()).
+		Return(nil).
+		Times(2)
+	logger.EXPECT().
+		LogSighting(gomock.Any(), "abc123", gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil).
+		Times(2)
+	enricher.EXPECT().
+		Enrich(gomock.Any(), "abc123").
+		Return(true).
+		Times(1)
+	enricher.EXPECT().
+		EnrichRoute(gomock.Any(), "AAL100").
+		Times(1)
+
+	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
+	p.poll(context.Background())
+	p.poll(context.Background())
+}
+
 // TestPoll_EmptyResponse verifies that an empty states response completes without errors.
 func TestPoll_EmptyResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)

@@ -56,12 +56,17 @@ type AlertEnricher interface {
 // TYPES
 // -------------------------------------------------------------------------
 
+// alertCooldown is the minimum time between recording duplicate alerts for
+// the same aircraft and squawk code.
+const alertCooldown = 30 * time.Minute
+
 // Monitor polls for global emergency squawk codes on a configurable interval.
 type Monitor struct {
 	source   GlobalFlightSource
 	store    AlertStore
 	enricher AlertEnricher
 	interval time.Duration
+	seen     map[string]time.Time // key: "icao24:squawk", value: last recorded time
 }
 
 // -------------------------------------------------------------------------
@@ -75,6 +80,7 @@ func New(source GlobalFlightSource, store AlertStore, enricher AlertEnricher, in
 		store:    store,
 		enricher: enricher,
 		interval: interval,
+		seen:     make(map[string]time.Time),
 	}
 }
 
@@ -116,9 +122,15 @@ func (m *Monitor) scan(ctx context.Context) {
 		return
 	}
 
+	now := time.Now()
 	count := 0
 	for _, sv := range resp.States {
 		if !emergencySquawks[sv.Squawk] {
+			continue
+		}
+
+		key := sv.ICAO24 + ":" + sv.Squawk
+		if last, ok := m.seen[key]; ok && now.Sub(last) < alertCooldown {
 			continue
 		}
 
@@ -137,12 +149,21 @@ func (m *Monitor) scan(ctx context.Context) {
 				slog.String("error", err.Error()))
 		}
 
+		m.seen[key] = now
+
 		m.enricher.Enrich(ctx, sv.ICAO24)
 		if callsign != "" {
 			m.enricher.EnrichRoute(ctx, callsign)
 		}
 
 		count++
+	}
+
+	// Evict expired entries
+	for key, last := range m.seen {
+		if now.Sub(last) >= alertCooldown {
+			delete(m.seen, key)
+		}
 	}
 
 	slog.InfoContext(ctx, "squawk scan complete",

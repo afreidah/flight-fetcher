@@ -54,13 +54,15 @@ type FlightEnricher interface {
 
 // Poller periodically queries a flight source for aircraft near a fixed location.
 type Poller struct {
-	source   FlightSource
-	cache    FlightCache
-	logger   SightingLogger
-	enricher FlightEnricher
-	center   geo.Coord
-	radiusKm float64
-	interval time.Duration
+	source     FlightSource
+	cache      FlightCache
+	logger     SightingLogger
+	enricher   FlightEnricher
+	center     geo.Coord
+	radiusKm   float64
+	interval   time.Duration
+	seenICAO   map[string]bool
+	seenRoutes map[string]bool
 }
 
 // -------------------------------------------------------------------------
@@ -78,13 +80,15 @@ func New(
 	interval time.Duration,
 ) *Poller {
 	return &Poller{
-		source:   source,
-		cache:    cache,
-		logger:   logger,
-		enricher: enr,
-		center:   center,
-		radiusKm: radiusKm,
-		interval: interval,
+		source:     source,
+		cache:      cache,
+		logger:     logger,
+		enricher:   enr,
+		center:     center,
+		radiusKm:   radiusKm,
+		interval:   interval,
+		seenICAO:   make(map[string]bool),
+		seenRoutes: make(map[string]bool),
 	}
 }
 
@@ -144,9 +148,14 @@ func (p *Poller) poll(ctx context.Context) {
 				slog.String("error", err.Error()))
 		}
 
-		p.enricher.Enrich(ctx, sv.ICAO24)
-		if callsign := strings.TrimSpace(sv.Callsign); callsign != "" {
+		if !p.seenICAO[sv.ICAO24] {
+			if p.enricher.Enrich(ctx, sv.ICAO24) {
+				p.seenICAO[sv.ICAO24] = true
+			}
+		}
+		if callsign := strings.TrimSpace(sv.Callsign); callsign != "" && !p.seenRoutes[callsign] {
 			p.enricher.EnrichRoute(ctx, callsign)
+			p.seenRoutes[callsign] = true
 		}
 		count++
 	}
