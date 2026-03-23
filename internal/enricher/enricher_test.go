@@ -84,6 +84,9 @@ func TestEnrich_NewAircraft_NotInHexDB(t *testing.T) {
 	lookup.EXPECT().
 		Lookup(gomock.Any(), "abc123").
 		Return(nil, nil)
+	store.EXPECT().
+		SaveAircraftMeta(gomock.Any(), &hexdb.AircraftInfo{ICAO24: "abc123"}).
+		Return(nil)
 
 	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
@@ -218,6 +221,9 @@ func TestEnrichRoute_NotFound(t *testing.T) {
 	routeLookup.EXPECT().
 		LookupRoute(gomock.Any(), "AAL2079").
 		Return(nil, nil)
+	routeStore.EXPECT().
+		SaveFlightRoute(gomock.Any(), &airlabs.FlightRoute{FlightICAO: "AAL2079"}).
+		Return(nil)
 
 	enr := New(nil, nil, routeLookup, routeStore)
 	enr.EnrichRoute(context.Background(), "AAL2079")

@@ -86,7 +86,7 @@ func main() {
 	defer cancel()
 
 	if cfg.Server != nil && cfg.Server.Listen != "" {
-		srv := server.New(redisStore, pgStore, pgStore, pgStore, Version)
+		srv := server.New(redisStore, pgStore, pgStore, pgStore, Version, cfg.Server.RefreshSeconds())
 		go srv.ListenAndServe(ctx, cfg.Server.Listen)
 	}
 

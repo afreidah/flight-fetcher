@@ -344,6 +344,22 @@ func TestPollDuration_Invalid(t *testing.T) {
 	}
 }
 
+// TestRefreshSeconds_Default verifies that RefreshSeconds returns 5 when not set.
+func TestRefreshSeconds_Default(t *testing.T) {
+	cfg := &ServerConfig{}
+	if got := cfg.RefreshSeconds(); got != 5 {
+		t.Errorf("RefreshSeconds() = %d, want 5", got)
+	}
+}
+
+// TestRefreshSeconds_Custom verifies that RefreshSeconds returns the configured value.
+func TestRefreshSeconds_Custom(t *testing.T) {
+	cfg := &ServerConfig{Refresh: 10}
+	if got := cfg.RefreshSeconds(); got != 10 {
+		t.Errorf("RefreshSeconds() = %d, want 10", got)
+	}
+}
+
 // writeTemp creates a temporary HCL file and returns its path.
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()

@@ -12,13 +12,18 @@ package server
 
 import (
 	_ "embed"
+	"fmt"
 	"strings"
 )
 
 //go:embed index.html
 var indexHTML string
 
-// renderedHTML returns the index page with the version placeholder replaced.
-func renderedHTML(version string) []byte {
-	return []byte(strings.Replace(indexHTML, "{{VERSION}}", version, 1))
+// renderedHTML returns the index page with placeholders replaced.
+func renderedHTML(version string, refreshSec int) []byte {
+	r := strings.NewReplacer(
+		"{{VERSION}}", version,
+		"{{REFRESH}}", fmt.Sprintf("%d", refreshSec),
+	)
+	return []byte(r.Replace(indexHTML))
 }

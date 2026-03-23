@@ -30,7 +30,8 @@ postgres {
 }
 
 server {
-  listen = ":8080"
+  listen  = ":8080"
+  refresh = 5
 }
 
 airlabs {
