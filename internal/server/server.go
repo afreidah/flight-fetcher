@@ -56,10 +56,11 @@ type SquawkAlertReader interface {
 
 // Server serves the web dashboard and flight data API.
 type Server struct {
-	flights FlightLister
+	flights  FlightLister
 	aircraft AircraftMetaReader
 	routes   RouteReader
 	alerts   SquawkAlertReader
+	version  string
 	mux      *http.ServeMux
 }
 
@@ -74,19 +75,22 @@ type flightDetail struct {
 // PUBLIC API
 // -------------------------------------------------------------------------
 
-// New creates a Server with the given data sources.
-func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader, alerts SquawkAlertReader) *Server {
+// New creates a Server with the given data sources and version string.
+func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader, alerts SquawkAlertReader, version string) *Server {
 	s := &Server{
 		flights:  flights,
 		aircraft: aircraft,
 		routes:   routes,
 		alerts:   alerts,
+		version:  version,
 		mux:      http.NewServeMux(),
 	}
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	s.mux.HandleFunc("GET /api/flights", s.handleListFlights)
 	s.mux.HandleFunc("GET /api/flights/{icao24}", s.handleGetFlight)
 	s.mux.HandleFunc("GET /api/squawk-alerts", s.handleSquawkAlerts)
+	s.mux.HandleFunc("GET /api/aircraft/{icao24}", s.handleGetAircraft)
+	s.mux.HandleFunc("GET /api/routes/{callsign}", s.handleGetRoute)
 	return s
 }
 
@@ -114,7 +118,7 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) {
 // handleIndex serves the embedded HTML dashboard page.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := w.Write(indexHTML); err != nil {
+	if _, err := w.Write(renderedHTML(s.version)); err != nil {
 		slog.WarnContext(r.Context(), "failed to write index page",
 			slog.String("error", err.Error()))
 	}
@@ -185,6 +189,46 @@ func (s *Server) handleSquawkAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(r.Context(), w, alerts)
+}
+
+// handleGetAircraft returns cached aircraft metadata by ICAO24.
+func (s *Server) handleGetAircraft(w http.ResponseWriter, r *http.Request) {
+	icao24 := r.PathValue("icao24")
+	meta, err := s.aircraft.GetAircraftMeta(r.Context(), icao24)
+	if err != nil {
+		http.Error(w, "failed to get aircraft", http.StatusInternalServerError)
+		slog.WarnContext(r.Context(), "api: aircraft lookup failed",
+			slog.String("icao24", icao24),
+			slog.String("error", err.Error()))
+		return
+	}
+	if meta == nil {
+		http.Error(w, "aircraft not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(r.Context(), w, meta)
+}
+
+// handleGetRoute returns cached flight route information by callsign.
+func (s *Server) handleGetRoute(w http.ResponseWriter, r *http.Request) {
+	callsign := r.PathValue("callsign")
+	if s.routes == nil {
+		http.Error(w, "route not found", http.StatusNotFound)
+		return
+	}
+	route, err := s.routes.GetFlightRoute(r.Context(), callsign)
+	if err != nil {
+		http.Error(w, "failed to get route", http.StatusInternalServerError)
+		slog.WarnContext(r.Context(), "api: route lookup failed",
+			slog.String("callsign", callsign),
+			slog.String("error", err.Error()))
+		return
+	}
+	if route == nil {
+		http.Error(w, "route not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(r.Context(), w, route)
 }
 
 // writeJSON encodes v as JSON and writes it to w.

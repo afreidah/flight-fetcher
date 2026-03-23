@@ -10,6 +10,7 @@ REGISTRY   ?= registry.munchbox.cc
 IMAGE      := flight-fetcher
 VERSION    := $(shell cat .version)
 PLATFORMS  := linux/amd64,linux/arm64
+GO_LDFLAGS := -s -w -X main.Version=$(VERSION)
 
 # -------------------------------------------------------------------------
 # DEFAULT TARGET
@@ -56,7 +57,7 @@ test: ## Run Go tests with coverage
 	go test -race -cover ./...
 
 build: ## Build the flight-fetcher binary
-	CGO_ENABLED=0 go build -o flight-fetcher ./cmd/server
+	CGO_ENABLED=0 go build -ldflags="$(GO_LDFLAGS)" -o flight-fetcher ./cmd/server
 
 run: ## Build and run the full stack via docker-compose (requires config.hcl)
 	docker compose up --build
@@ -77,6 +78,7 @@ push: ## Build and push multi-arch images to registry
 	docker buildx build \
 	  --pull \
 	  --platform $(PLATFORMS) \
+	  --build-arg VERSION=$(VERSION) \
 	  -f deploy/Dockerfile \
 	  -t $(REGISTRY)/$(IMAGE):$(VERSION) \
 	  -t $(REGISTRY)/$(IMAGE):latest \

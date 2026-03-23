@@ -6,138 +6,219 @@
   <title>Flight Fetcher</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; }
-    h1 { padding: 1rem; font-size: 1.25rem; background: #1e293b; border-bottom: 1px solid #334155; }
-    #flights {
-      padding: 1rem;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 0.5rem;
+    body { font-family: system-ui, -apple-system, sans-serif; background: #faf5f5; color: #4a4055; }
+    h1 { padding: 1rem; font-size: 1.25rem; background: #f9e4e4; border-bottom: 1px solid #f0c6c6; color: #6b4c5a; margin-bottom: 1rem; }
+    h1 .version { font-size: 0.8rem; color: #b89aa6; font-weight: 400; margin-left: 0.75rem; }
+    h2 { font-size: 1rem; padding: 0.75rem 1rem 0.5rem; color: #8e7a8a; }
+    #status { padding: 0.5rem 1rem; color: #a08e9a; font-size: 0.85rem; }
+
+    .row {
+      margin: 0 0.5rem 3px;
+      background: #fff;
+      border: 1px solid #f0d4d8;
+      border-radius: 8px;
+      overflow: hidden;
     }
-    .flight {
-      padding: 0.75rem;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: border-color 0.15s;
-    }
-    .flight:hover, .flight.selected { border-color: #60a5fa; }
-    .flight .icao { font-weight: 600; color: #60a5fa; }
-    .flight .callsign { color: #94a3b8; margin-left: 0.5rem; }
-    .flight .meta { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
-    #detail {
-      margin: 1rem;
-      padding: 1rem;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      display: none;
-    }
-    #detail h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: #f8fafc; }
-    #detail table { width: 100%; border-collapse: collapse; }
-    #detail td { padding: 0.35rem 0.75rem; border-bottom: 1px solid #1e293b; }
-    #detail td:first-child { color: #94a3b8; width: 160px; }
-    #detail .section { color: #60a5fa; font-weight: 600; padding-top: 0.75rem; }
-    #status { padding: 1rem; color: #64748b; font-size: 0.9rem; }
-    .squawk-emergency { color: #ef4444; font-weight: 600; }
-    #squawk-section { padding: 0 1rem; }
-    #squawk-section h2 { font-size: 1rem; color: #ef4444; margin-bottom: 0.5rem; }
-    .squawk-alert {
+    .row-header {
+      display: flex;
+      align-items: center;
       padding: 0.5rem 0.75rem;
-      background: #1e293b;
-      border: 1px solid #7f1d1d;
-      border-radius: 6px;
-      margin-bottom: 0.5rem;
+      cursor: pointer;
+      gap: 1rem;
       font-size: 0.9rem;
+      transition: background 0.15s;
     }
-    .squawk-alert .code { color: #ef4444; font-weight: 600; }
-    .squawk-alert .info { color: #94a3b8; }
+    .row-header:hover { background: #fdf0f2; }
+    .row.expanded .row-header { border-bottom: 1px solid #f0d4d8; background: #fdf0f2; }
+    .row-header .icao { font-weight: 600; color: #7ea8d4; min-width: 70px; }
+    .row-header .callsign { color: #4a4055; min-width: 80px; }
+    .row-header .field { color: #a08e9a; }
+    .row-header .squawk-emergency { color: #d96b7c; font-weight: 600; }
+
+    .row-detail {
+      display: none;
+      padding: 0.75rem;
+      background: #fdf8f8;
+    }
+    .row.expanded .row-detail { display: block; }
+    .row-detail table { width: 100%; border-collapse: collapse; }
+    .row-detail td { padding: 0.3rem 0.75rem; }
+    .row-detail td:first-child { color: #a08e9a; width: 160px; }
+    .row-detail .section { color: #e8879a; font-weight: 600; padding-top: 0.5rem; }
+
+    .squawk-row { border-color: #f0a8b0; }
+    .squawk-row .row-header { color: #6b4c5a; }
+    .squawk-row .icao { color: #d96b7c; }
   </style>
 </head>
 <body>
-  <h1>Flight Fetcher</h1>
+  <h1>Flight Fetcher<span class="version">{{VERSION}}</span></h1>
   <div id="squawk-section"></div>
   <div id="status">Loading...</div>
   <div id="flights"></div>
-  <div id="detail"></div>
 
   <script>
-    const flightsEl = document.getElementById("flights");
-    const detailEl = document.getElementById("detail");
-    const statusEl = document.getElementById("status");
-    let selected = null;
+    var expanded = null;
 
     async function loadFlights() {
       try {
-        const resp = await fetch("/api/flights");
-        const flights = await resp.json();
-        statusEl.textContent = flights.length + " aircraft in range";
-        flightsEl.innerHTML = "";
-        flights.sort((a, b) => a.icao24.localeCompare(b.icao24));
-        flights.forEach(f => {
-          const div = document.createElement("div");
-          div.className = "flight" + (f.icao24 === selected ? " selected" : "");
+        var resp = await fetch("/api/flights");
+        var flights = await resp.json();
+        document.getElementById("status").textContent = flights.length + " aircraft in range";
+        var el = document.getElementById("flights");
+        el.innerHTML = "";
+        flights.sort(function(a, b) { return a.icao24.localeCompare(b.icao24); });
+        flights.forEach(function(f) {
+          var div = document.createElement("div");
+          div.className = "row" + (expanded === f.icao24 ? " expanded" : "");
           div.innerHTML =
-            '<span class="icao">' + esc(f.icao24) + '</span>' +
-            '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
-            '<div class="meta">' +
-              esc(f.origin_country || "-") +
-              " | Alt: " + fmt(f.baro_altitude, "m") +
-              " | Spd: " + fmt(f.velocity, "m/s") +
-              (f.squawk ? " | Squawk: " + squawkLabel(f.squawk) : "") +
-            '</div>';
-          div.onclick = () => selectFlight(f.icao24);
-          flightsEl.appendChild(div);
+            '<div class="row-header" onclick="toggleFlight(\'' + esc(f.icao24) + '\')">' +
+              '<span class="icao">' + esc(f.icao24) + '</span>' +
+              '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
+              '<span class="field">' + esc(f.origin_country || "-") + '</span>' +
+              '<span class="field">Alt: ' + fmt(f.baro_altitude, "m") + '</span>' +
+              '<span class="field">Spd: ' + fmt(f.velocity, "m/s") + '</span>' +
+              '<span class="field">Hdg: ' + fmt(f.heading, "deg") + '</span>' +
+              (f.squawk ? '<span class="field">' + squawkLabel(f.squawk) + '</span>' : '') +
+            '</div>' +
+            '<div class="row-detail" id="detail-' + esc(f.icao24) + '"></div>';
+          el.appendChild(div);
         });
+        if (expanded && !expanded.startsWith("squawk-")) loadDetail(expanded);
       } catch (e) {
-        statusEl.textContent = "Error loading flights";
+        document.getElementById("status").textContent = "Error loading flights";
       }
     }
 
-    async function selectFlight(icao24) {
-      selected = icao24;
-      document.querySelectorAll(".flight").forEach(el => {
-        el.classList.toggle("selected", el.querySelector(".icao").textContent === icao24);
-      });
+    async function toggleFlight(icao24) {
+      if (expanded === icao24) { expanded = null; loadFlights(); return; }
+      expanded = icao24;
+      loadFlights();
+    }
+
+    async function loadDetail(icao24) {
+      var el = document.getElementById("detail-" + icao24);
+      if (!el) return;
       try {
-        const resp = await fetch("/api/flights/" + encodeURIComponent(icao24));
-        if (!resp.ok) { detailEl.style.display = "none"; return; }
-        const data = await resp.json();
-        const s = data.state;
-        let rows = '<h2>' + esc(s.icao24) + '</h2><table>';
-        rows += section("Flight State");
-        rows += row("ICAO24", s.icao24);
-        rows += row("Callsign", s.callsign.trim() || "-");
-        rows += row("Origin Country", s.origin_country);
-        rows += row("Latitude", s.latitude);
-        rows += row("Longitude", s.longitude);
-        rows += row("Baro Altitude", fmt(s.baro_altitude, "m"));
-        rows += row("Velocity", fmt(s.velocity, "m/s"));
-        rows += row("Heading", fmt(s.heading, "deg"));
-        rows += row("Vertical Rate", fmt(s.vertical_rate, "m/s"));
-        rows += row("On Ground", s.on_ground);
-        rows += row("Squawk", squawkLabel(s.squawk));
-        if (data.route) {
-          const r = data.route;
-          rows += section("Route");
-          rows += row("From", r.dep_iata ? r.dep_iata + " - " + (r.dep_name || "") : "-");
-          rows += row("To", r.arr_iata ? r.arr_iata + " - " + (r.arr_name || "") : "-");
-        }
-        if (data.aircraft) {
-          const a = data.aircraft;
-          rows += section("Aircraft Metadata");
-          rows += row("Registration", a.Registration || "-");
-          rows += row("Manufacturer", a.ManufacturerName || "-");
-          rows += row("Type", a.Type || "-");
-          rows += row("Operator", a.OperatorFlagCode || "-");
-        }
-        rows += '</table>';
-        detailEl.innerHTML = rows;
-        detailEl.style.display = "block";
+        var resp = await fetch("/api/flights/" + encodeURIComponent(icao24));
+        if (!resp.ok) return;
+        var data = await resp.json();
+        el.innerHTML = buildDetail(data);
       } catch (e) {
-        detailEl.style.display = "none";
+        el.innerHTML = "<em>Failed to load details</em>";
       }
+    }
+
+    function buildDetail(data) {
+      var s = data.state;
+      var t = '<table>';
+      t += section("Flight State");
+      t += row("ICAO24", s.icao24);
+      t += row("Callsign", s.callsign.trim() || "-");
+      t += row("Origin Country", s.origin_country);
+      t += row("Latitude", s.latitude);
+      t += row("Longitude", s.longitude);
+      t += row("Baro Altitude", fmt(s.baro_altitude, "m"));
+      t += row("Velocity", fmt(s.velocity, "m/s"));
+      t += row("Heading", fmt(s.heading, "deg"));
+      t += row("Vertical Rate", fmt(s.vertical_rate, "m/s"));
+      t += row("On Ground", s.on_ground);
+      t += row("Squawk", squawkLabel(s.squawk));
+      if (data.route) {
+        var r = data.route;
+        t += section("Route");
+        t += row("From", r.dep_iata ? r.dep_iata + " - " + (r.dep_name || "") : "-");
+        t += row("To", r.arr_iata ? r.arr_iata + " - " + (r.arr_name || "") : "-");
+      }
+      if (data.aircraft) {
+        var a = data.aircraft;
+        t += section("Aircraft Metadata");
+        t += row("Registration", a.Registration || "-");
+        t += row("Manufacturer", a.ManufacturerName || "-");
+        t += row("Type", a.Type || "-");
+        t += row("Operator", a.OperatorFlagCode || "-");
+      }
+      t += '</table>';
+      return t;
+    }
+
+    var cachedAlerts = null;
+
+    async function loadSquawkAlerts() {
+      var el = document.getElementById("squawk-section");
+      try {
+        var resp = await fetch("/api/squawk-alerts");
+        cachedAlerts = await resp.json();
+        if (!cachedAlerts || cachedAlerts.length === 0) { el.innerHTML = ""; return; }
+        var html = '<h2>Global Emergency Squawk Alerts (last 24h)</h2>';
+        cachedAlerts.forEach(function(a, i) {
+          var id = "squawk-" + i;
+          var label = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"}[a.Squawk] || a.Squawk;
+          var time = new Date(a.SeenAt).toLocaleString();
+          var isExpanded = expanded === id;
+          html += '<div class="row squawk-row' + (isExpanded ? ' expanded' : '') + '">' +
+            '<div class="row-header" onclick="toggleSquawk(\'' + id + '\')">' +
+              '<span class="icao squawk-emergency">' + esc(a.Squawk) + ' ' + esc(label) + '</span>' +
+              '<span class="callsign">' + esc(a.Icao24) + '</span>' +
+              (a.Callsign ? '<span class="field">' + esc(a.Callsign) + '</span>' : '') +
+              '<span class="field">' + esc(time) + '</span>' +
+              '<span class="field">Lat: ' + a.Lat.toFixed(2) + '</span>' +
+              '<span class="field">Lon: ' + a.Lon.toFixed(2) + '</span>' +
+            '</div>' +
+            '<div class="row-detail" id="detail-' + id + '"></div>' +
+          '</div>';
+        });
+        el.innerHTML = html;
+        if (expanded && expanded.startsWith("squawk-")) {
+          var idx = parseInt(expanded.split("-")[1]);
+          if (cachedAlerts[idx]) loadSquawkDetail(expanded, cachedAlerts[idx]);
+        }
+      } catch (e) {
+        el.innerHTML = "";
+      }
+    }
+
+    function toggleSquawk(id) {
+      if (expanded === id) { expanded = null; loadSquawkAlerts(); return; }
+      expanded = id;
+      loadSquawkAlerts();
+    }
+
+    async function loadSquawkDetail(id, alert) {
+      var el = document.getElementById("detail-" + id);
+      if (!el) return;
+      var t = '<table>';
+      t += section("Alert Details");
+      t += row("ICAO24", alert.Icao24);
+      t += row("Callsign", alert.Callsign || "-");
+      t += row("Squawk", squawkLabel(alert.Squawk));
+      t += row("Latitude", alert.Lat);
+      t += row("Longitude", alert.Lon);
+      t += row("Seen At", new Date(alert.SeenAt).toLocaleString());
+      try {
+        var metaResp = await fetch("/api/aircraft/" + encodeURIComponent(alert.Icao24));
+        if (metaResp.ok) {
+          var a = await metaResp.json();
+          t += section("Aircraft Metadata");
+          t += row("Registration", a.Registration || "-");
+          t += row("Manufacturer", a.ManufacturerName || "-");
+          t += row("Type", a.Type || "-");
+          t += row("Operator", a.OperatorFlagCode || "-");
+        }
+      } catch (e) {}
+      if (alert.Callsign) {
+        try {
+          var routeResp = await fetch("/api/routes/" + encodeURIComponent(alert.Callsign));
+          if (routeResp.ok) {
+            var r = await routeResp.json();
+            t += section("Route");
+            t += row("From", r.dep_iata ? r.dep_iata + " - " + (r.dep_name || "") : "-");
+            t += row("To", r.arr_iata ? r.arr_iata + " - " + (r.arr_name || "") : "-");
+          }
+        } catch (e) {}
+      }
+      t += '</table>';
+      el.innerHTML = t;
     }
 
     function row(label, val) {
@@ -157,32 +238,9 @@
       return esc(code);
     }
     function esc(s) {
-      const d = document.createElement("div");
+      var d = document.createElement("div");
       d.textContent = s;
       return d.innerHTML;
-    }
-
-    async function loadSquawkAlerts() {
-      var el = document.getElementById("squawk-section");
-      try {
-        var resp = await fetch("/api/squawk-alerts");
-        var alerts = await resp.json();
-        if (!alerts || alerts.length === 0) { el.innerHTML = ""; return; }
-        var labels = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"};
-        var html = '<h2>Global Emergency Squawk Alerts (last 24h)</h2>';
-        alerts.forEach(function(a) {
-          var label = labels[a.Squawk] || a.Squawk;
-          var time = new Date(a.SeenAt).toLocaleString();
-          html += '<div class="squawk-alert">' +
-            '<span class="code">' + esc(a.Squawk) + ' ' + esc(label) + '</span> ' +
-            '<span class="info">' + esc(a.Icao24) +
-            (a.Callsign ? ' / ' + esc(a.Callsign) : '') +
-            ' at ' + esc(time) + '</span></div>';
-        });
-        el.innerHTML = html;
-      } catch (e) {
-        el.innerHTML = "";
-      }
     }
 
     loadFlights();

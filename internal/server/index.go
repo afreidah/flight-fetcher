@@ -10,7 +10,15 @@
 
 package server
 
-import _ "embed"
+import (
+	_ "embed"
+	"strings"
+)
 
 //go:embed index.html
-var indexHTML []byte
+var indexHTML string
+
+// renderedHTML returns the index page with the version placeholder replaced.
+func renderedHTML(version string) []byte {
+	return []byte(strings.Replace(indexHTML, "{{VERSION}}", version, 1))
+}
