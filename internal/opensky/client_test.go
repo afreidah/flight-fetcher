@@ -297,22 +297,41 @@ func TestGetStates_EmptyStates(t *testing.T) {
 	}
 }
 
-// TestGetStates_SetsBasicAuth verifies that client credentials are sent as basic auth.
-func TestGetStates_SetsBasicAuth(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		if !ok {
-			t.Error("expected basic auth header")
+// TestGetStates_SetsBearerToken verifies that an OAuth2 token is fetched and sent as a bearer token.
+func TestGetStates_SetsBearerToken(t *testing.T) {
+	mux := http.NewServeMux()
+
+	// Token endpoint
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("grant_type") != "client_credentials" {
+			t.Errorf("grant_type = %q, want client_credentials", r.FormValue("grant_type"))
 		}
-		if user != "my-client" || pass != "my-secret" {
-			t.Errorf("auth = %q:%q, want my-client:my-secret", user, pass)
+		if r.FormValue("client_id") != "my-client" {
+			t.Errorf("client_id = %q, want my-client", r.FormValue("client_id"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token": "test-token-123", "expires_in": 300}`))
+	})
+
+	// API endpoint
+	mux.HandleFunc("GET /states/all", func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer test-token-123" {
+			t.Errorf("Authorization = %q, want Bearer test-token-123", auth)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"time": 1234, "states": null}`))
-	}))
+	})
+
+	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, clientID: "my-client", clientSecret: "my-secret"}
+	// Point both baseURL and tokenURL at the test server
+	origTokenURL := tokenURL
+	defer func() { tokenURL = origTokenURL }()
+	tokenURL = srv.URL + "/token"
+
+	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, clientID: "my-client", clientSecret: "my-secret", backoff: initialBackoff}
 	_, err := c.GetStates(context.Background(), geo.BBox{})
 	if err != nil {
 		t.Fatalf("GetStates() error = %v", err)

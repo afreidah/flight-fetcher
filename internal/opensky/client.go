@@ -3,10 +3,9 @@
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// HTTP client for the OpenSky Network REST API. Queries aircraft state vectors
-// within a geographic bounding box using API client credentials. Malformed
-// state vectors are logged and skipped. Applies exponential backoff on HTTP 429
-// rate limit responses to avoid hammering the API.
+// HTTP client for the OpenSky Network REST API. Authenticates via OAuth2 client
+// credentials flow, caches the access token until expiry, and applies
+// exponential backoff on HTTP 429 rate limit responses.
 // -------------------------------------------------------------------------------
 
 package opensky
@@ -17,6 +16,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,12 +28,14 @@ import (
 // CONSTANTS
 // -------------------------------------------------------------------------
 
-// backoff parameters for rate limit handling.
 const (
 	initialBackoff = 30 * time.Second
 	maxBackoff     = 10 * time.Minute
 	backoffFactor  = 2
 )
+
+// tokenURL is the OpenSky OAuth2 token endpoint. Declared as a var for testing.
+var tokenURL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
 
 // -------------------------------------------------------------------------
 // TYPES
@@ -48,13 +51,22 @@ type Client struct {
 	mu          sync.Mutex
 	backoffUtil time.Time
 	backoff     time.Duration
+
+	token       string
+	tokenExpiry time.Time
+}
+
+// tokenResponse represents the OAuth2 token endpoint response.
+type tokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
 }
 
 // -------------------------------------------------------------------------
 // PUBLIC API
 // -------------------------------------------------------------------------
 
-// NewClient creates an OpenSky API client with the given API client credentials.
+// NewClient creates an OpenSky API client with the given OAuth2 client credentials.
 func NewClient(clientID, clientSecret string) *Client {
 	return &Client{
 		httpClient:   &http.Client{Timeout: 15 * time.Second},
@@ -74,15 +86,22 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/states/all?lamin=%f&lomin=%f&lamax=%f&lomax=%f",
+	reqURL := fmt.Sprintf("%s/states/all?lamin=%f&lomin=%f&lamax=%f&lomax=%f",
 		c.baseURL, bbox.MinLat, bbox.MinLon, bbox.MaxLat, bbox.MaxLon)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
+
 	if c.clientID != "" {
-		req.SetBasicAuth(c.clientID, c.clientSecret)
+		token, err := c.getToken(ctx)
+		if err != nil {
+			slog.WarnContext(ctx, "oauth2 token fetch failed, trying without auth",
+				slog.String("error", err.Error()))
+		} else {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -127,6 +146,56 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 // -------------------------------------------------------------------------
 // INTERNALS
 // -------------------------------------------------------------------------
+
+// getToken returns a cached OAuth2 access token, refreshing it if expired.
+func (c *Client) getToken(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	if c.token != "" && time.Now().Before(c.tokenExpiry) {
+		token := c.token
+		c.mu.Unlock()
+		return token, nil
+	}
+	c.mu.Unlock()
+
+	data := url.Values{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {c.clientID},
+		"client_secret": {c.clientSecret},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL,
+		strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("creating token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("executing token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token request failed: %d", resp.StatusCode)
+	}
+
+	var tr tokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
+		return "", fmt.Errorf("decoding token response: %w", err)
+	}
+
+	c.mu.Lock()
+	c.token = tr.AccessToken
+	// Refresh 30s before actual expiry to avoid edge cases
+	c.tokenExpiry = time.Now().Add(time.Duration(tr.ExpiresIn)*time.Second - 30*time.Second)
+	c.mu.Unlock()
+
+	slog.InfoContext(ctx, "oauth2 token acquired",
+		slog.Int("expires_in_sec", tr.ExpiresIn))
+
+	return tr.AccessToken, nil
+}
 
 // checkBackoff returns an error if the client is currently in a backoff
 // period, skipping the request entirely.

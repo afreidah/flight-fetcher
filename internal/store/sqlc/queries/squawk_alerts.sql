@@ -7,3 +7,6 @@ SELECT id, icao24, callsign, squawk, lat, lon, seen_at
 FROM squawk_alerts
 WHERE seen_at > $1
 ORDER BY seen_at DESC;
+
+-- name: DeleteOldSquawkAlerts :execresult
+DELETE FROM squawk_alerts WHERE seen_at < $1;

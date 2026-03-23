@@ -168,6 +168,32 @@ func (p *PostgresStore) GetRecentSquawkAlerts(ctx context.Context, since time.Du
 	})
 }
 
+// DeleteOldSightings removes sightings older than the given duration.
+// Returns the number of rows deleted.
+func (p *PostgresStore) DeleteOldSightings(ctx context.Context, maxAge time.Duration) (int64, error) {
+	result, err := p.queries.DeleteOldSightings(ctx, pgtype.Timestamptz{
+		Time:  time.Now().UTC().Add(-maxAge),
+		Valid: true,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+// DeleteOldSquawkAlerts removes squawk alerts older than the given duration.
+// Returns the number of rows deleted.
+func (p *PostgresStore) DeleteOldSquawkAlerts(ctx context.Context, maxAge time.Duration) (int64, error) {
+	result, err := p.queries.DeleteOldSquawkAlerts(ctx, pgtype.Timestamptz{
+		Time:  time.Now().UTC().Add(-maxAge),
+		Valid: true,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 // Close shuts down the PostgreSQL connection pool.
 func (p *PostgresStore) Close() {
 	p.pool.Close()

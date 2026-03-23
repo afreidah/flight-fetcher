@@ -8,8 +8,17 @@ package db
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const deleteOldSquawkAlerts = `-- name: DeleteOldSquawkAlerts :execresult
+DELETE FROM squawk_alerts WHERE seen_at < $1
+`
+
+func (q *Queries) DeleteOldSquawkAlerts(ctx context.Context, seenAt pgtype.Timestamptz) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, deleteOldSquawkAlerts, seenAt)
+}
 
 const getRecentSquawkAlerts = `-- name: GetRecentSquawkAlerts :many
 SELECT id, icao24, callsign, squawk, lat, lon, seen_at
