@@ -8,6 +8,7 @@
 
 REGISTRY   ?= registry.munchbox.cc
 IMAGE      := flight-fetcher
+VERSION    := $(shell cat .version)
 PLATFORMS  := linux/amd64,linux/arm64
 
 # -------------------------------------------------------------------------
@@ -72,11 +73,12 @@ clean: ## Stop the stack, remove volumes, and remove the binary
 # -------------------------------------------------------------------------
 
 push: ## Build and push multi-arch images to registry
-	@echo "Building and pushing $(REGISTRY)/$(IMAGE) for $(PLATFORMS)"
+	@echo "Building and pushing $(REGISTRY)/$(IMAGE):$(VERSION) for $(PLATFORMS)"
 	docker buildx build \
 	  --pull \
 	  --platform $(PLATFORMS) \
 	  -f deploy/Dockerfile \
+	  -t $(REGISTRY)/$(IMAGE):$(VERSION) \
 	  -t $(REGISTRY)/$(IMAGE):latest \
 	  --output type=image,push=true \
 	  .
