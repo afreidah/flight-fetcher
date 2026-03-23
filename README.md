@@ -1,12 +1,39 @@
-# Flight Fetcher
-
 ![Dashboard](docs/webui.png)
+
+# Flight Fetcher
 
 [![CI](https://github.com/afreidah/flight-fetcher/actions/workflows/ci.yml/badge.svg)](https://github.com/afreidah/flight-fetcher/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/afreidah/flight-fetcher/branch/main/graph/badge.svg)](https://codecov.io/gh/afreidah/flight-fetcher)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Go service that polls the OpenSky Network API for aircraft within a configurable radius of a fixed location, enriches aircraft metadata via HexDB.io, looks up flight routes via AirLabs, and serves a live web dashboard.
+A self-hosted aircraft tracking service written in Go that monitors airspace around a configurable location in real time. The service polls the OpenSky Network API every 20 seconds for aircraft within a given radius, enriches each flight with metadata and route information from multiple sources, and serves a live web dashboard for visualization.
+
+## Core Functionality
+
+* **Aircraft Polling and Filtering** - Queries the OpenSky Network REST API for aircraft state vectors within a geographic bounding box, then applies precise haversine distance filtering to enforce a circular radius around the configured center point. Each poll cycle captures ICAO24 identifier, callsign, position, altitude, velocity, heading, vertical rate, ground status, and squawk transponder code.
+
+* **Aircraft Metadata Enrichment** - When a previously unseen ICAO24 appears, the service queries HexDB.io for static aircraft information including registration number, manufacturer, aircraft type, and operator. Results are cached in PostgreSQL so each aircraft is only looked up once.
+
+* **Flight Route Enrichment** - When a new callsign appears, the service queries the AirLabs API to resolve departure and arrival airports (IATA/ICAO codes and full airport names). Routes are cached in PostgreSQL to minimize usage against the free API tier (1,000 requests/month). Empty and whitespace-only callsigns are skipped.
+
+* **Squawk Code Tracking** - Parses transponder squawk codes from OpenSky data for all local aircraft. A separate background worker optionally polls the global OpenSky endpoint on a configurable interval to detect emergency squawk codes worldwide (7500 hijack, 7600 radio failure, 7700 general emergency), enriches matching aircraft, and stores them for dashboard display.
+
+* **Dual Storage** - Current flight state is written to Redis with a 2-minute TTL, so aircraft automatically disappear when they leave the area or stop broadcasting. Historical sightings, aircraft metadata, and flight routes are persisted in PostgreSQL via sqlc-generated queries, with goose migrations run automatically on startup.
+
+* **Web Dashboard** - An embedded HTML dashboard served on a configurable HTTP port provides a live view of all tracked aircraft with auto-refresh every 5 seconds. Flights are displayed as clickable cards showing ICAO24, callsign, country, altitude, speed, and squawk code. Clicking a flight reveals full detail including position, flight state, departure/arrival airports, aircraft metadata, and squawk status. Emergency squawk codes are highlighted in red. A global squawk alerts section surfaces emergency transponder events from around the world.
+
+## Architecture
+
+  - Configuration via HCL files with optional blocks for the dashboard server, AirLabs API, and squawk monitor. Secrets are templated by Vault in production.
+  - Dependency injection via interfaces at the consumer, with gomock-generated mocks for unit testing.
+  - Structured logging via log/slog with JSON output and context propagation throughout.
+  - Resilient error handling where individual item failures (cache writes, sighting logs, enrichment lookups) are logged and skipped without stopping the batch.
+  - Graceful shutdown via signal handling with context cancellation propagated to all components.
+
+Deployment
+
+Deploys as a Nomad job with Consul service discovery, Vault secret injection, and Traefik reverse proxy with OAuth2 authentication. The Docker image is a multi-stage Alpine build producing a minimal container with the static Go binary. A docker-compose environment is provided for local development with PostgreSQL and Redis.
+
 
 ```
          OpenSky Network API
