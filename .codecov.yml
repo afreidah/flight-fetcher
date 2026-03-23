@@ -3,8 +3,8 @@
 #
 # Project: Flight Fetcher / Author: Alex Freidah
 #
-# Configures PR status checks and excludes process entry points from coverage
-# reports.
+# Configures PR status checks and excludes process entry points, generated
+# code, and integration-test-only packages from coverage reports.
 # -------------------------------------------------------------------------------
 
 coverage:
@@ -19,3 +19,7 @@ coverage:
 
 ignore:
   - "cmd/"
+  - "internal/store/sqlc/"
+  - "internal/store/migrations/"
+  - "internal/store/postgres.go"
+  - "internal/store/redis.go"

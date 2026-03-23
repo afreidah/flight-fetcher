@@ -26,8 +26,9 @@ help: ## Display available Make targets
 # CODE GENERATION
 # -------------------------------------------------------------------------
 
-generate: ## Generate sqlc query code
+generate: ## Generate sqlc query code and interface mocks
 	sqlc generate
+	go generate ./...
 
 migration: ## Create a new database migration file
 	@read -p "Migration name: " name; \
