@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/geo"
 )
@@ -191,6 +192,61 @@ func TestGetStates_SkipsMalformed(t *testing.T) {
 	}
 	if resp.States[1].ICAO24 != "good2" {
 		t.Errorf("States[1].ICAO24 = %q, want %q", resp.States[1].ICAO24, "good2")
+	}
+}
+
+// TestGetStates_RateLimit verifies that a 429 response triggers backoff.
+func TestGetStates_RateLimit(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"time": 1234, "states": null}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, backoff: initialBackoff}
+
+	// First call gets 429
+	_, err := c.GetStates(context.Background(), geo.BBox{})
+	if err == nil {
+		t.Fatal("GetStates() expected error for 429 response, got nil")
+	}
+
+	// Second call should be blocked by backoff without hitting the server
+	_, err = c.GetStates(context.Background(), geo.BBox{})
+	if err == nil {
+		t.Fatal("GetStates() expected backoff error, got nil")
+	}
+	if calls != 1 {
+		t.Errorf("server received %d calls, want 1 (second should be blocked by backoff)", calls)
+	}
+}
+
+// TestGetStates_BackoffResetsOnSuccess verifies that backoff resets after a successful request.
+func TestGetStates_BackoffResetsOnSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"time": 1234, "states": null}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, backoff: 5 * time.Minute}
+
+	// Simulate prior backoff state
+	c.backoff = 5 * time.Minute
+
+	// Successful request should reset
+	_, err := c.GetStates(context.Background(), geo.BBox{})
+	if err != nil {
+		t.Fatalf("GetStates() error = %v", err)
+	}
+	if c.backoff != initialBackoff {
+		t.Errorf("backoff = %v, want %v after successful request", c.backoff, initialBackoff)
 	}
 }
 
