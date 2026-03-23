@@ -15,32 +15,48 @@ import (
 	"log/slog"
 
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
-	"github.com/afreidah/flight-fetcher/internal/store"
 )
+
+//go:generate mockgen -destination mock_enricher_test.go -package enricher github.com/afreidah/flight-fetcher/internal/enricher AircraftStore,AircraftLookup
+
+// -------------------------------------------------------------------------
+// INTERFACES
+// -------------------------------------------------------------------------
+
+// AircraftStore reads and writes cached aircraft metadata.
+type AircraftStore interface {
+	GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error)
+	SaveAircraftMeta(ctx context.Context, info *hexdb.AircraftInfo) error
+}
+
+// AircraftLookup fetches aircraft metadata from an external source.
+type AircraftLookup interface {
+	Lookup(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error)
+}
 
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
 
-// Enricher looks up and caches aircraft metadata from HexDB.io.
+// Enricher looks up and caches aircraft metadata from an external source.
 type Enricher struct {
-	hexdb    *hexdb.Client
-	postgres *store.PostgresStore
+	lookup AircraftLookup
+	store  AircraftStore
 }
 
 // -------------------------------------------------------------------------
 // PUBLIC API
 // -------------------------------------------------------------------------
 
-// New creates an Enricher backed by the given HexDB client and Postgres store.
-func New(h *hexdb.Client, pg *store.PostgresStore) *Enricher {
-	return &Enricher{hexdb: h, postgres: pg}
+// New creates an Enricher backed by the given lookup client and metadata store.
+func New(lookup AircraftLookup, store AircraftStore) *Enricher {
+	return &Enricher{lookup: lookup, store: store}
 }
 
 // Enrich looks up and caches aircraft metadata if not already known. Returns
 // true if this is a newly seen aircraft.
 func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
-	existing, err := e.postgres.GetAircraftMeta(ctx, icao24)
+	existing, err := e.store.GetAircraftMeta(ctx, icao24)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to check aircraft meta",
 			slog.String("icao24", icao24),
@@ -51,7 +67,7 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		return false
 	}
 
-	info, err := e.hexdb.Lookup(ctx, icao24)
+	info, err := e.lookup.Lookup(ctx, icao24)
 	if err != nil {
 		slog.WarnContext(ctx, "hexdb lookup failed",
 			slog.String("icao24", icao24),
@@ -64,7 +80,7 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		return true
 	}
 
-	if err := e.postgres.SaveAircraftMeta(ctx, info); err != nil {
+	if err := e.store.SaveAircraftMeta(ctx, info); err != nil {
 		slog.WarnContext(ctx, "failed to save aircraft meta",
 			slog.String("icao24", icao24),
 			slog.String("error", err.Error()))

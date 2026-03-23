@@ -66,6 +66,7 @@ func main() {
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
 	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval)
 
+
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
