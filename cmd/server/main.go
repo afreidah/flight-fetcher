@@ -30,6 +30,9 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/store"
 )
 
+// Version is set at build time via -ldflags.
+var Version = "dev"
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -82,7 +85,7 @@ func main() {
 	defer cancel()
 
 	if cfg.Server != nil && cfg.Server.Listen != "" {
-		srv := server.New(redisStore, pgStore, pgStore, pgStore)
+		srv := server.New(redisStore, pgStore, pgStore, pgStore, Version)
 		go srv.ListenAndServe(ctx, cfg.Server.Listen)
 	}
 
@@ -93,7 +96,8 @@ func main() {
 				slog.String("error", err.Error()))
 			os.Exit(1)
 		}
-		sm := squawk.New(oskyClient, pgStore, enr, interval)
+		squawkClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
+		sm := squawk.New(squawkClient, pgStore, enr, interval)
 		go sm.Run(ctx)
 	}
 
