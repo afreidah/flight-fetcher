@@ -1,0 +1,4 @@
+flight-fetcher
+*.hcl
+!deploy/*.hcl
+.env
