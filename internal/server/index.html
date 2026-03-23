@@ -40,6 +40,7 @@
     #detail td:first-child { color: #94a3b8; width: 160px; }
     #detail .section { color: #60a5fa; font-weight: 600; padding-top: 0.75rem; }
     #status { padding: 1rem; color: #64748b; font-size: 0.9rem; }
+    .squawk-emergency { color: #ef4444; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -71,6 +72,7 @@
               esc(f.origin_country || "-") +
               " | Alt: " + fmt(f.baro_altitude, "m") +
               " | Spd: " + fmt(f.velocity, "m/s") +
+              (f.squawk ? " | Squawk: " + squawkLabel(f.squawk) : "") +
             '</div>';
           div.onclick = () => selectFlight(f.icao24);
           flightsEl.appendChild(div);
@@ -102,6 +104,7 @@
         rows += row("Heading", fmt(s.heading, "deg"));
         rows += row("Vertical Rate", fmt(s.vertical_rate, "m/s"));
         rows += row("On Ground", s.on_ground);
+        rows += row("Squawk", squawkLabel(s.squawk));
         if (data.route) {
           const r = data.route;
           rows += section("Route");
@@ -132,6 +135,13 @@
     }
     function fmt(v, unit) {
       return v != null && v !== 0 ? Math.round(v) + " " + unit : "-";
+    }
+    function squawkLabel(code) {
+      if (!code) return "-";
+      var emergency = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"};
+      var label = emergency[code];
+      if (label) return '<span class="squawk-emergency">' + esc(code) + ' - ' + label + '</span>';
+      return esc(code);
     }
     function esc(s) {
       const d = document.createElement("div");

@@ -58,6 +58,9 @@ func TestUnmarshalStateVector_Valid(t *testing.T) {
 	if sv.OnGround != false {
 		t.Errorf("OnGround = %v, want false", sv.OnGround)
 	}
+	if sv.Squawk != "1234" {
+		t.Errorf("Squawk = %q, want %q", sv.Squawk, "1234")
+	}
 }
 
 // TestUnmarshalStateVector_TooShort verifies that an undersized array returns an error.
@@ -71,7 +74,7 @@ func TestUnmarshalStateVector_TooShort(t *testing.T) {
 
 // TestUnmarshalStateVector_NullFields verifies that null fields decode to zero values.
 func TestUnmarshalStateVector_NullFields(t *testing.T) {
-	raw := `["abc123", null, "United States", null, null, null, null, null, null, null, null, null]`
+	raw := `["abc123", null, "United States", null, null, null, null, null, null, null, null, null, null, null, null]`
 
 	var sv StateVector
 	if err := json.Unmarshal([]byte(raw), &sv); err != nil {
@@ -93,7 +96,7 @@ func TestUnmarshalStateVector_NullFields(t *testing.T) {
 
 // TestUnmarshalStateVector_TypeMismatch verifies that wrong types are treated as zero values.
 func TestUnmarshalStateVector_TypeMismatch(t *testing.T) {
-	raw := `["abc123", 12345, "United States", null, null, "not_a_number", true, null, null, null, null, null]`
+	raw := `["abc123", 12345, "United States", null, null, "not_a_number", true, null, null, null, null, null, null, null, null]`
 
 	var sv StateVector
 	if err := json.Unmarshal([]byte(raw), &sv); err != nil {
@@ -167,9 +170,9 @@ func TestGetStates_SkipsMalformed(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"time": 1234,
 			"states": [
-				["good1", "UAL1  ", "US", null, null, -118.0, 34.0, 3000.0, false, 100.0, 90.0, 0.0],
+				["good1", "UAL1  ", "US", null, null, -118.0, 34.0, 3000.0, false, 100.0, 90.0, 0.0, null, null, "1200"],
 				["short"],
-				["good2", "UAL2  ", "US", null, null, -118.0, 34.0, 3000.0, false, 100.0, 90.0, 0.0]
+				["good2", "UAL2  ", "US", null, null, -118.0, 34.0, 3000.0, false, 100.0, 90.0, 0.0, null, null, "7700"]
 			]
 		}`))
 	}))
