@@ -14,7 +14,7 @@
 
     .row {
       margin: 0 0.5rem 3px;
-      background: #faf5f6;
+      background: #e8eef6;
       border: 1px solid #f0d4d8;
       border-radius: 8px;
       overflow: hidden;
@@ -38,7 +38,7 @@
     .row-detail {
       display: none;
       padding: 0.75rem;
-      background: #fdf8f8;
+      background: #fdf0f2;
     }
     .row.expanded .row-detail { display: block; }
     .row-detail table { width: 100%; border-collapse: collapse; }
@@ -76,8 +76,8 @@
               '<span class="icao">' + esc(f.icao24) + '</span>' +
               '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
               '<span class="field">' + esc(f.origin_country || "-") + '</span>' +
-              '<span class="field">Alt: ' + fmt(f.baro_altitude, "m") + '</span>' +
-              '<span class="field">Spd: ' + fmt(f.velocity, "m/s") + '</span>' +
+              '<span class="field">Alt: ' + fmtFt(f.baro_altitude) + '</span>' +
+              '<span class="field">Spd: ' + fmtMph(f.velocity) + '</span>' +
               '<span class="field">Hdg: ' + fmt(f.heading, "deg") + '</span>' +
               (f.squawk ? '<span class="field">' + squawkLabel(f.squawk) + '</span>' : '') +
             '</div>' +
@@ -118,10 +118,10 @@
       t += row("Origin Country", s.origin_country);
       t += row("Latitude", s.latitude);
       t += row("Longitude", s.longitude);
-      t += row("Baro Altitude", fmt(s.baro_altitude, "m"));
-      t += row("Velocity", fmt(s.velocity, "m/s"));
+      t += row("Baro Altitude", fmtFt(s.baro_altitude));
+      t += row("Velocity", fmtMph(s.velocity));
       t += row("Heading", fmt(s.heading, "deg"));
-      t += row("Vertical Rate", fmt(s.vertical_rate, "m/s"));
+      t += row("Vertical Rate", fmtFpm(s.vertical_rate));
       t += row("On Ground", s.on_ground);
       t += row("Squawk", squawkLabel(s.squawk));
       if (data.route) {
@@ -229,6 +229,15 @@
     }
     function fmt(v, unit) {
       return v != null && v !== 0 ? Math.round(v) + " " + unit : "-";
+    }
+    function fmtFt(m) {
+      return m != null && m !== 0 ? Math.round(m * 3.28084).toLocaleString() + " ft" : "-";
+    }
+    function fmtMph(ms) {
+      return ms != null && ms !== 0 ? Math.round(ms * 2.23694) + " mph" : "-";
+    }
+    function fmtFpm(ms) {
+      return ms != null && ms !== 0 ? Math.round(ms * 196.85) + " ft/min" : "-";
     }
     function squawkLabel(code) {
       if (!code) return "-";
