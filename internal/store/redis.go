@@ -57,7 +57,7 @@ func NewRedisStore(addr, password string, db int) *RedisStore {
 }
 
 // SetFlight stores the current state of a flight, keyed by ICAO24 with a TTL.
-func (r *RedisStore) SetFlight(ctx context.Context, sv opensky.StateVector) error {
+func (r *RedisStore) SetFlight(ctx context.Context, sv *opensky.StateVector) error {
 	data, err := json.Marshal(sv)
 	if err != nil {
 		return fmt.Errorf("marshaling state: %w", err)

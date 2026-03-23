@@ -35,15 +35,17 @@ func main() {
 	configPath := flag.String("config", "config.hcl", "path to config file")
 	flag.Parse()
 
+	ctx := context.Background()
+
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		slog.Error("failed to load config", slog.String("error", err.Error()))
+		slog.ErrorContext(ctx, "failed to load config", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
 	pollInterval, err := cfg.PollDuration()
 	if err != nil {
-		slog.Error("failed to parse poll interval", slog.String("error", err.Error()))
+		slog.ErrorContext(ctx, "failed to parse poll interval", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
@@ -53,9 +55,9 @@ func main() {
 	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	defer redisStore.Close()
 
-	pgStore, err := store.NewPostgresStore(cfg.Postgres.DSN)
+	pgStore, err := store.NewPostgresStore(ctx, cfg.Postgres.DSN)
 	if err != nil {
-		slog.Error("failed to connect to postgres", slog.String("error", err.Error()))
+		slog.ErrorContext(ctx, "failed to connect to postgres", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 	defer pgStore.Close()
@@ -64,7 +66,7 @@ func main() {
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
 	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	p.Run(ctx)

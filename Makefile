@@ -23,6 +23,21 @@ help: ## Display available Make targets
 	@echo ""
 
 # -------------------------------------------------------------------------
+# CODE GENERATION
+# -------------------------------------------------------------------------
+
+generate: ## Generate sqlc query code
+	sqlc generate
+
+migration: ## Create a new database migration file
+	@read -p "Migration name: " name; \
+	last=$$(ls internal/store/migrations/*.sql 2>/dev/null | sed 's/.*\///' | sort -n | tail -1 | grep -oE '^[0-9]+'); \
+	next=$$(printf '%05d' $$(( $${last:-0} + 1 ))); \
+	file="internal/store/migrations/$${next}_$${name}.sql"; \
+	printf -- '-- +goose Up\n\n-- +goose Down\n' > "$$file"; \
+	echo "Created $$file"
+
+# -------------------------------------------------------------------------
 # DEVELOPMENT
 # -------------------------------------------------------------------------
 
@@ -55,5 +70,5 @@ push: ## Build and push multi-arch images to registry
 	  --output type=image,push=true \
 	  .
 
-.PHONY: help vet govulncheck lint test run push
+.PHONY: help generate migration vet govulncheck lint test run push
 .DEFAULT_GOAL := help
