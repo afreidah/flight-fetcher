@@ -57,7 +57,7 @@ type Client struct {
 // NewClient creates an OpenSky API client with the given API client credentials.
 func NewClient(clientID, clientSecret string) *Client {
 	return &Client{
-		httpClient:   &http.Client{},
+		httpClient:   &http.Client{Timeout: 15 * time.Second},
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		baseURL:      "https://opensky-network.org/api",
