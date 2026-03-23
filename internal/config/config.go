@@ -30,6 +30,7 @@ type Config struct {
 	Server       *ServerConfig       `hcl:"server,block"`
 	AirLabs      *AirLabsConfig     `hcl:"airlabs,block"`
 	SquawkMonitor *SquawkMonitorConfig `hcl:"squawk_monitor,block"`
+	Retention     *RetentionConfig     `hcl:"retention,block"`
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -72,6 +73,13 @@ type SquawkMonitorConfig struct {
 	Interval string `hcl:"interval"`
 }
 
+// RetentionConfig holds settings for automatic data cleanup.
+type RetentionConfig struct {
+	SightingsMaxAge string `hcl:"sightings_max_age"`
+	AlertsMaxAge    string `hcl:"alerts_max_age"`
+	Interval        string `hcl:"interval,optional"`
+}
+
 // -------------------------------------------------------------------------
 // PUBLIC API
 // -------------------------------------------------------------------------
@@ -84,6 +92,28 @@ func (c *Config) PollDuration() (time.Duration, error) {
 // SquawkMonitorDuration parses the squawk monitor interval into a time.Duration.
 func (c *SquawkMonitorConfig) SquawkMonitorDuration() (time.Duration, error) {
 	return time.ParseDuration(c.Interval)
+}
+
+// RetentionDurations parses the retention config into durations. Interval
+// defaults to 1 hour if not specified.
+func (c *RetentionConfig) RetentionDurations() (sightings, alerts, interval time.Duration, err error) {
+	sightings, err = time.ParseDuration(c.SightingsMaxAge)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	alerts, err = time.ParseDuration(c.AlertsMaxAge)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if c.Interval != "" {
+		interval, err = time.ParseDuration(c.Interval)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+	} else {
+		interval = time.Hour
+	}
+	return sightings, alerts, interval, nil
 }
 
 // Load reads and decodes an HCL configuration file at the given path.

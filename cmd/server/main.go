@@ -25,6 +25,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/poller"
+	"github.com/afreidah/flight-fetcher/internal/retention"
 	"github.com/afreidah/flight-fetcher/internal/server"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/store"
@@ -99,6 +100,17 @@ func main() {
 		squawkClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 		sm := squawk.New(squawkClient, pgStore, enr, interval)
 		go sm.Run(ctx)
+	}
+
+	if cfg.Retention != nil {
+		sightingsAge, alertsAge, interval, err := cfg.Retention.RetentionDurations()
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to parse retention config",
+				slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		rw := retention.New(pgStore, sightingsAge, alertsAge, interval)
+		go rw.Run(ctx)
 	}
 
 	p.Run(ctx)

@@ -78,6 +78,105 @@ postgres {
 	if cfg.SquawkMonitor != nil {
 		t.Error("SquawkMonitor should be nil when block is omitted")
 	}
+	if cfg.Retention != nil {
+		t.Error("Retention should be nil when block is omitted")
+	}
+}
+
+// TestLoad_WithRetentionBlock verifies that the optional retention block is parsed correctly.
+func TestLoad_WithRetentionBlock(t *testing.T) {
+	content := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+opensky {
+  id     = "test-client"
+  secret = "test-secret"
+}
+
+poll_interval = "20s"
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+
+retention {
+  sightings_max_age = "720h"
+  alerts_max_age    = "168h"
+  interval          = "2h"
+}
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Retention == nil {
+		t.Fatal("Retention should not be nil when block is present")
+	}
+	sightings, alerts, interval, err := cfg.Retention.RetentionDurations()
+	if err != nil {
+		t.Fatalf("RetentionDurations() error = %v", err)
+	}
+	if sightings != 720*time.Hour {
+		t.Errorf("sightings = %v, want 720h", sightings)
+	}
+	if alerts != 168*time.Hour {
+		t.Errorf("alerts = %v, want 168h", alerts)
+	}
+	if interval != 2*time.Hour {
+		t.Errorf("interval = %v, want 2h", interval)
+	}
+}
+
+// TestLoad_WithRetentionBlock_DefaultInterval verifies that interval defaults to 1h.
+func TestLoad_WithRetentionBlock_DefaultInterval(t *testing.T) {
+	content := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+opensky {
+  id     = "test-client"
+  secret = "test-secret"
+}
+
+poll_interval = "20s"
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+
+retention {
+  sightings_max_age = "720h"
+  alerts_max_age    = "168h"
+}
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	_, _, interval, err := cfg.Retention.RetentionDurations()
+	if err != nil {
+		t.Fatalf("RetentionDurations() error = %v", err)
+	}
+	if interval != time.Hour {
+		t.Errorf("interval = %v, want 1h (default)", interval)
+	}
 }
 
 // TestLoad_WithSquawkMonitorBlock verifies that the optional squawk_monitor block is parsed correctly.

@@ -41,3 +41,9 @@ airlabs {
 squawk_monitor {
   interval = "60s"
 }
+
+# Optional: automatic cleanup of old data
+retention {
+  sightings_max_age = "720h"
+  alerts_max_age    = "168h"
+}

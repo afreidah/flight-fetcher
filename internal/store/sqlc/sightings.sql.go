@@ -8,8 +8,17 @@ package db
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const deleteOldSightings = `-- name: DeleteOldSightings :execresult
+DELETE FROM sightings WHERE seen_at < $1
+`
+
+func (q *Queries) DeleteOldSightings(ctx context.Context, seenAt pgtype.Timestamptz) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, deleteOldSightings, seenAt)
+}
 
 const logSighting = `-- name: LogSighting :exec
 INSERT INTO sightings (icao24, lat, lon, distance_km, seen_at)
