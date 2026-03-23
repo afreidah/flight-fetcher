@@ -66,16 +66,13 @@ func (r *RedisStore) SetFlight(ctx context.Context, sv *opensky.StateVector) err
 	return r.client.Set(ctx, key, data, defaultTTL).Err()
 }
 
-// GetAllFlights returns all current flight states stored in Redis.
+// GetAllFlights returns all current flight states stored in Redis. Uses SCAN
+// instead of KEYS to avoid blocking Redis during enumeration.
 func (r *RedisStore) GetAllFlights(ctx context.Context) ([]opensky.StateVector, error) {
-	keys, err := r.client.Keys(ctx, flightKeyPrefix+"*").Result()
-	if err != nil {
-		return nil, err
-	}
-
-	flights := make([]opensky.StateVector, 0, len(keys))
-	for _, key := range keys {
-		data, err := r.client.Get(ctx, key).Bytes()
+	var flights []opensky.StateVector
+	iter := r.client.Scan(ctx, 0, flightKeyPrefix+"*", 0).Iterator()
+	for iter.Next(ctx) {
+		data, err := r.client.Get(ctx, iter.Val()).Bytes()
 		if err != nil {
 			continue
 		}
@@ -84,6 +81,9 @@ func (r *RedisStore) GetAllFlights(ctx context.Context) ([]opensky.StateVector, 
 			continue
 		}
 		flights = append(flights, sv)
+	}
+	if err := iter.Err(); err != nil {
+		return nil, err
 	}
 	return flights, nil
 }
