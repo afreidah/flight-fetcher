@@ -106,7 +106,7 @@ func (p *Poller) poll(ctx context.Context) {
 			continue
 		}
 
-		if err := p.redis.SetFlight(ctx, sv); err != nil {
+		if err := p.redis.SetFlight(ctx, &sv); err != nil {
 			slog.WarnContext(ctx, "redis write failed",
 				slog.String("icao24", sv.ICAO24),
 				slog.String("error", err.Error()))
