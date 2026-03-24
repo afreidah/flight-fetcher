@@ -65,8 +65,9 @@ type Options struct {
 
 // Server serves the web dashboard and flight data API.
 type Server struct {
-	opts Options
-	mux  *http.ServeMux
+	opts      Options
+	indexPage []byte
+	mux       *http.ServeMux
 }
 
 // flightDetail combines live state, enriched metadata, and route information.
@@ -83,8 +84,9 @@ type flightDetail struct {
 // New creates a Server with the given options.
 func New(opts *Options) *Server {
 	s := &Server{
-		opts: *opts,
-		mux:  http.NewServeMux(),
+		opts:      *opts,
+		indexPage: renderedHTML(opts.Version, opts.RefreshSec),
+		mux:       http.NewServeMux(),
 	}
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	s.mux.HandleFunc("GET /api/flights", s.handleListFlights)
@@ -119,7 +121,7 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) {
 // handleIndex serves the embedded HTML dashboard page.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := w.Write(renderedHTML(s.opts.Version, s.opts.RefreshSec)); err != nil {
+	if _, err := w.Write(s.indexPage); err != nil {
 		slog.WarnContext(r.Context(), "failed to write index page",
 			slog.String("error", err.Error()))
 	}
