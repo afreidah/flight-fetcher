@@ -275,6 +275,8 @@
 
     function selectFlight(icao24) {
       var el = document.getElementById("flights");
+      // Clean up squawk marker if present
+      if (markers["_squawk"]) { map.removeLayer(markers["_squawk"]); delete markers["_squawk"]; }
       // Deselect previous
       if (selected) {
         var prev = el.querySelector('.row[data-icao="' + selected + '"]');
@@ -385,6 +387,7 @@
       if (selected === id) {
         selected = null;
         document.getElementById("detail").innerHTML = "";
+        if (markers["_squawk"]) { map.removeLayer(markers["_squawk"]); delete markers["_squawk"]; }
         loadSquawkAlerts();
         return;
       }
@@ -392,12 +395,27 @@
       if (selected) {
         var prev = document.querySelector('.row.selected');
         if (prev) prev.classList.remove("selected");
-        if (markers[selected]) markers[selected].setStyle({ color: "#7ea8d4", fillColor: "#7ea8d4", radius: 5 });
+        var prevFlight = flightMap[selected];
+        if (markers[selected] && prevFlight) {
+          markers[selected].setIcon(planeIcon(prevFlight.heading, false));
+        }
       }
       selected = id;
       loadSquawkAlerts();
       var idx = parseInt(id.split("-")[1]);
-      if (cachedAlerts && cachedAlerts[idx]) loadSquawkDetail(cachedAlerts[idx]);
+      if (cachedAlerts && cachedAlerts[idx]) {
+        var alert = cachedAlerts[idx];
+        loadSquawkDetail(alert);
+        // Add a temporary marker for the squawk alert location
+        if (alert.lat && alert.lon) {
+          if (markers["_squawk"]) map.removeLayer(markers["_squawk"]);
+          markers["_squawk"] = L.marker([alert.lat, alert.lon], {
+            icon: planeIcon(0, true)
+          }).addTo(map);
+          map.panTo([alert.lat, alert.lon]);
+          map.setZoom(6);
+        }
+      }
     }
 
     async function loadSquawkDetail(alert) {
