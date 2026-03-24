@@ -45,6 +45,7 @@ type GlobalFlightSource interface {
 // AlertStore persists emergency squawk detections.
 type AlertStore interface {
 	InsertSquawkAlert(ctx context.Context, icao24, callsign, squawk string, lat, lon float64) error
+	HasRecentSquawkAlert(ctx context.Context, icao24, squawk string, cooldown time.Duration) (bool, error)
 }
 
 // AlertEnricher enriches aircraft metadata and route information.
@@ -67,7 +68,6 @@ type Monitor struct {
 	store    AlertStore
 	enricher AlertEnricher
 	interval time.Duration
-	seen     map[string]time.Time // key: "icao24:squawk", value: last recorded time
 }
 
 // -------------------------------------------------------------------------
@@ -81,7 +81,6 @@ func New(source GlobalFlightSource, store AlertStore, enricher AlertEnricher, in
 		store:    store,
 		enricher: enricher,
 		interval: interval,
-		seen:     make(map[string]time.Time),
 	}
 }
 
@@ -108,15 +107,20 @@ func (m *Monitor) scan(ctx context.Context) {
 		return
 	}
 
-	now := time.Now()
 	count := 0
 	for _, sv := range resp.States {
 		if !emergencySquawks[sv.Squawk] {
 			continue
 		}
 
-		key := sv.ICAO24 + ":" + sv.Squawk
-		if last, ok := m.seen[key]; ok && now.Sub(last) < alertCooldown {
+		exists, err := m.store.HasRecentSquawkAlert(ctx, sv.ICAO24, sv.Squawk, alertCooldown)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to check recent squawk alert",
+				slog.String("icao24", sv.ICAO24),
+				slog.String("error", err.Error()))
+			continue
+		}
+		if exists {
 			continue
 		}
 
@@ -135,21 +139,12 @@ func (m *Monitor) scan(ctx context.Context) {
 				slog.String("error", err.Error()))
 		}
 
-		m.seen[key] = now
-
 		m.enricher.Enrich(ctx, sv.ICAO24)
 		if callsign != "" {
 			m.enricher.EnrichRoute(ctx, callsign)
 		}
 
 		count++
-	}
-
-	// Evict expired entries
-	for key, last := range m.seen {
-		if now.Sub(last) >= alertCooldown {
-			delete(m.seen, key)
-		}
 	}
 
 	slog.InfoContext(ctx, "squawk scan complete",
