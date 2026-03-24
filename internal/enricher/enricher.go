@@ -92,6 +92,9 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		return true
 	}
 
+	slog.InfoContext(ctx, "enriching aircraft",
+		slog.String("icao24", icao24))
+
 	info, err := e.lookup.Lookup(ctx, icao24)
 	if err != nil {
 		slog.WarnContext(ctx, "hexdb lookup failed",
@@ -100,7 +103,7 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		return false
 	}
 	if info == nil {
-		slog.DebugContext(ctx, "no hexdb data found",
+		slog.InfoContext(ctx, "no hexdb data found",
 			slog.String("icao24", icao24))
 		sentinel := &hexdb.AircraftInfo{ICAO24: icao24}
 		if err := e.store.SaveAircraftMeta(ctx, sentinel); err != nil {
@@ -110,6 +113,11 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		}
 		return true
 	}
+
+	slog.InfoContext(ctx, "aircraft enriched",
+		slog.String("icao24", icao24),
+		slog.String("registration", info.Registration),
+		slog.String("type", info.Type))
 
 	if err := e.store.SaveAircraftMeta(ctx, info); err != nil {
 		slog.WarnContext(ctx, "failed to save aircraft meta",
@@ -139,6 +147,9 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 		return true
 	}
 
+	slog.InfoContext(ctx, "enriching route",
+		slog.String("callsign", callsign))
+
 	route, err := e.routeLookup.LookupRoute(ctx, callsign)
 	if err != nil {
 		slog.WarnContext(ctx, "primary route lookup failed",
@@ -157,10 +168,15 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 		}
 	}
 	if route == nil {
-		slog.DebugContext(ctx, "no route data found",
+		slog.InfoContext(ctx, "no route data found",
 			slog.String("callsign", callsign))
 		return true
 	}
+
+	slog.InfoContext(ctx, "route enriched",
+		slog.String("callsign", callsign),
+		slog.String("from", route.DepIATA),
+		slog.String("to", route.ArrIATA))
 
 	if err := e.routeStore.SaveFlightRoute(ctx, route); err != nil {
 		slog.WarnContext(ctx, "failed to save flight route",

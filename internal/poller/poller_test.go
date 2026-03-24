@@ -60,7 +60,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 		Return(true).
 		Times(1)
 
-	p := New(source, cache, logger, enricher, center, radiusKm, time.Minute)
+	p := New(source, cache, logger, enricher, center, radiusKm, time.Minute, time.Hour)
 	p.poll(context.Background())
 }
 
@@ -78,7 +78,7 @@ func TestPoll_SourceError(t *testing.T) {
 		GetStates(gomock.Any(), gomock.Any()).
 		Return(nil, errors.New("api down"))
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
+	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
 	p.poll(context.Background())
 }
 
@@ -114,7 +114,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any())
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
+	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
 	p.poll(context.Background())
 }
 
@@ -150,7 +150,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any())
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
+	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
 	p.poll(context.Background())
 }
 
@@ -192,9 +192,56 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 		Return(true).
 		Times(1)
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
+	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
 	p.poll(context.Background())
 	p.poll(context.Background())
+}
+
+// TestPoll_EvictsSeenMapsAfterInterval verifies that seen maps are cleared after the eviction interval.
+func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	source := NewMockFlightSource(ctrl)
+	cache := NewMockFlightCache(ctrl)
+	logger := NewMockSightingLogger(ctrl)
+	enricher := NewMockFlightEnricher(ctrl)
+
+	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
+
+	resp := &opensky.StatesResponse{
+		Time: 1234,
+		States: []opensky.StateVector{
+			{ICAO24: "abc123", Callsign: "AAL100", Latitude: 34.09, Longitude: -118.33},
+		},
+	}
+
+	// Two poll cycles: first enriches normally, second evicts and re-enriches
+	source.EXPECT().
+		GetStates(gomock.Any(), gomock.Any()).
+		Return(resp, nil).
+		Times(2)
+	cache.EXPECT().
+		SetFlight(gomock.Any(), gomock.Any()).
+		Return(nil).
+		Times(2)
+	logger.EXPECT().
+		LogSighting(gomock.Any(), "abc123", gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil).
+		Times(2)
+	// Enrich called on both cycles (eviction clears seen maps before second)
+	enricher.EXPECT().
+		Enrich(gomock.Any(), "abc123").
+		Return(true).
+		Times(2)
+	enricher.EXPECT().
+		EnrichRoute(gomock.Any(), "AAL100").
+		Return(true).
+		Times(2)
+
+	// Use nanosecond eviction so it triggers on every poll after the first
+	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Nanosecond)
+	p.poll(context.Background()) // enriches, marks seen
+	time.Sleep(time.Millisecond)
+	p.poll(context.Background()) // eviction fires, clears maps, re-enriches
 }
 
 // TestPoll_EmptyResponse verifies that an empty states response completes without errors.
@@ -211,6 +258,6 @@ func TestPoll_EmptyResponse(t *testing.T) {
 		GetStates(gomock.Any(), gomock.Any()).
 		Return(&opensky.StatesResponse{Time: 1234, States: nil}, nil)
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
+	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
 	p.poll(context.Background())
 }

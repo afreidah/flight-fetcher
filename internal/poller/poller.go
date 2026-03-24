@@ -55,15 +55,17 @@ type FlightEnricher interface {
 
 // Poller periodically queries a flight source for aircraft near a fixed location.
 type Poller struct {
-	source     FlightSource
-	cache      FlightCache
-	logger     SightingLogger
-	enricher   FlightEnricher
-	center     geo.Coord
-	radiusKm   float64
-	interval   time.Duration
-	seenICAO   map[string]bool
-	seenRoutes map[string]bool
+	source        FlightSource
+	cache         FlightCache
+	logger        SightingLogger
+	enricher      FlightEnricher
+	center        geo.Coord
+	radiusKm      float64
+	interval      time.Duration
+	seenICAO      map[string]bool
+	seenRoutes    map[string]bool
+	evictInterval time.Duration
+	lastEvict     time.Time
 }
 
 // -------------------------------------------------------------------------
@@ -79,17 +81,20 @@ func New(
 	center geo.Coord,
 	radiusKm float64,
 	interval time.Duration,
+	evictInterval time.Duration,
 ) *Poller {
 	return &Poller{
-		source:     source,
-		cache:      cache,
-		logger:     logger,
-		enricher:   enr,
-		center:     center,
-		radiusKm:   radiusKm,
-		interval:   interval,
-		seenICAO:   make(map[string]bool),
-		seenRoutes: make(map[string]bool),
+		source:        source,
+		cache:         cache,
+		logger:        logger,
+		enricher:      enr,
+		center:        center,
+		radiusKm:      radiusKm,
+		interval:      interval,
+		seenICAO:      make(map[string]bool),
+		seenRoutes:    make(map[string]bool),
+		evictInterval: evictInterval,
+		lastEvict:     time.Now(),
 	}
 }
 
@@ -109,6 +114,15 @@ func (p *Poller) Run(ctx context.Context) {
 // poll executes a single poll cycle: query source, filter by distance,
 // store state, log sightings, and enrich new aircraft.
 func (p *Poller) poll(ctx context.Context) {
+	if time.Since(p.lastEvict) >= p.evictInterval {
+		slog.InfoContext(ctx, "evicting enrichment cache",
+			slog.Int("icao_count", len(p.seenICAO)),
+			slog.Int("route_count", len(p.seenRoutes)))
+		p.seenICAO = make(map[string]bool)
+		p.seenRoutes = make(map[string]bool)
+		p.lastEvict = time.Now()
+	}
+
 	bbox := geo.BBoxAround(p.center, p.radiusKm)
 	resp, err := p.source.GetStates(ctx, bbox)
 	if err != nil {

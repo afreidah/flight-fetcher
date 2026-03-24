@@ -6,7 +6,11 @@
 # Copy this file to config.hcl and fill in your credentials.
 # Register at https://opensky-network.org for OpenSky API access.
 # Register at https://airlabs.co for AirLabs flight route data (optional).
+# Register at https://flightaware.com/aeroapi for FlightAware fallback (optional).
 # -------------------------------------------------------------------------------
+
+poll_interval      = "20s"
+enrichment_refresh = "1h"
 
 location {
   lat       = 34.0928
@@ -18,8 +22,6 @@ opensky {
   id     = "YOUR_CLIENT_ID"
   secret = "YOUR_CLIENT_SECRET"
 }
-
-poll_interval = "20s"
 
 redis {
   addr = "redis:6379"

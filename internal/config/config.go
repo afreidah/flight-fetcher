@@ -24,14 +24,16 @@ import (
 
 // Config holds all application configuration loaded from an HCL file.
 type Config struct {
-	Location     Location       `hcl:"location,block"`
-	OpenSky      OpenSkyConfig  `hcl:"opensky,block"`
-	PollInterval string         `hcl:"poll_interval"`
-	Redis        RedisConfig    `hcl:"redis,block"`
-	Postgres     PostgresConfig `hcl:"postgres,block"`
-	Server       *ServerConfig       `hcl:"server,block"`
-	AirLabs      *AirLabsConfig      `hcl:"airlabs,block"`
-	FlightAware  *FlightAwareConfig  `hcl:"flightaware,block"`
+	PollInterval       string `hcl:"poll_interval"`
+	EnrichmentRefresh  string `hcl:"enrichment_refresh,optional"`
+
+	Location      Location             `hcl:"location,block"`
+	OpenSky       OpenSkyConfig        `hcl:"opensky,block"`
+	Redis         RedisConfig          `hcl:"redis,block"`
+	Postgres      PostgresConfig       `hcl:"postgres,block"`
+	AirLabs       *AirLabsConfig       `hcl:"airlabs,block"`
+	FlightAware   *FlightAwareConfig   `hcl:"flightaware,block"`
+	Server        *ServerConfig        `hcl:"server,block"`
 	SquawkMonitor *SquawkMonitorConfig `hcl:"squawk_monitor,block"`
 	Retention     *RetentionConfig     `hcl:"retention,block"`
 }
@@ -105,6 +107,15 @@ type RetentionConfig struct {
 // PollDuration parses the PollInterval string into a time.Duration.
 func (c *Config) PollDuration() (time.Duration, error) {
 	return time.ParseDuration(c.PollInterval)
+}
+
+// EnrichmentRefreshDuration parses the enrichment refresh interval.
+// Defaults to 1 hour if not set.
+func (c *Config) EnrichmentRefreshDuration() (time.Duration, error) {
+	if c.EnrichmentRefresh == "" {
+		return time.Hour, nil
+	}
+	return time.ParseDuration(c.EnrichmentRefresh)
 }
 
 // SquawkMonitorDuration parses the squawk monitor interval into a time.Duration.
