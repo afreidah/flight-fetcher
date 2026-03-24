@@ -326,12 +326,7 @@ func TestGetStates_SetsBearerToken(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	// Point both baseURL and tokenURL at the test server
-	origTokenURL := tokenURL
-	defer func() { tokenURL = origTokenURL }()
-	tokenURL = srv.URL + "/token"
-
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, clientID: "my-client", clientSecret: "my-secret", backoff: initialBackoff}
+	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, tokenURL: srv.URL + "/token", clientID: "my-client", clientSecret: "my-secret", backoff: initialBackoff}
 	_, err := c.GetStates(context.Background(), geo.BBox{})
 	if err != nil {
 		t.Fatalf("GetStates() error = %v", err)

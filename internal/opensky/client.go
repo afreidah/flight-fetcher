@@ -34,8 +34,8 @@ const (
 	backoffFactor  = 2
 )
 
-// tokenURL is the OpenSky OAuth2 token endpoint. Declared as a var for testing.
-var tokenURL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+// defaultTokenURL is the OpenSky OAuth2 token endpoint.
+const defaultTokenURL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
 
 // -------------------------------------------------------------------------
 // TYPES
@@ -47,6 +47,7 @@ type Client struct {
 	clientID     string
 	clientSecret string
 	baseURL      string
+	tokenURL     string
 
 	mu          sync.Mutex
 	backoffUtil time.Time
@@ -74,6 +75,7 @@ func NewClient(clientID, clientSecret string) *Client {
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		baseURL:      "https://opensky-network.org/api",
+		tokenURL:     defaultTokenURL,
 		backoff:      initialBackoff,
 	}
 }
@@ -166,7 +168,7 @@ func (c *Client) getToken(ctx context.Context) (string, error) {
 		"client_secret": {c.clientSecret},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL,
 		strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("creating token request: %w", err)
