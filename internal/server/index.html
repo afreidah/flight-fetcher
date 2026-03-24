@@ -334,7 +334,7 @@
       t += row("Heading", fmt(s.heading, "deg"));
       t += row("Vertical Rate", fmtFpm(s.vertical_rate));
       t += row("On Ground", s.on_ground);
-      t += row("Squawk", squawkLabel(s.squawk));
+      t += rowHTML("Squawk", squawkLabel(s.squawk));
       if (data.route) {
         var r = data.route;
         t += section("Route");
@@ -368,10 +368,10 @@
           var time = new Date(a.seen_at).toLocaleString();
           html += '<div class="row squawk-row' + (selected === id ? ' selected' : '') + '">' +
             '<div class="row-header" onclick="selectSquawk(\'' + id + '\')">' +
-              '<span class="icao squawk-emergency">' + esc(a.squawk) + ' ' + esc(label) + '</span>' +
+              '<span class="icao squawk-emergency" style="width:140px;flex-shrink:0">' + esc(a.squawk) + ' ' + esc(label) + '</span>' +
               '<span class="callsign">' + esc(a.icao24) + '</span>' +
-              (a.callsign ? '<span class="field">' + esc(a.callsign) + '</span>' : '') +
-              '<span class="field">' + esc(time) + '</span>' +
+              '<span class="col-country">' + esc(a.callsign || "-") + '</span>' +
+              '<span class="col-squawk">' + esc(time) + '</span>' +
             '</div>' +
           '</div>';
         });
@@ -406,7 +406,7 @@
       t += section("Alert Details");
       t += row("ICAO24", alert.icao24);
       t += row("Callsign", alert.callsign || "-");
-      t += row("Squawk", squawkLabel(alert.squawk));
+      t += rowHTML("Squawk", squawkLabel(alert.squawk));
       t += row("Latitude", alert.lat);
       t += row("Longitude", alert.lon);
       t += row("Seen At", new Date(alert.seen_at).toLocaleString());
@@ -443,6 +443,9 @@
 
     function row(label, val) {
       return '<tr><td>' + esc(label) + '</td><td>' + esc(String(val)) + '</td></tr>';
+    }
+    function rowHTML(label, html) {
+      return '<tr><td>' + esc(label) + '</td><td>' + html + '</td></tr>';
     }
     function section(name) {
       return '<tr><td class="section" colspan="2">' + esc(name) + '</td></tr>';
