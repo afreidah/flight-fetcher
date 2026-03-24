@@ -51,6 +51,16 @@ func (s *stubAlertStore) InsertSquawkAlert(_ context.Context, icao24, callsign, 
 	return s.err
 }
 
+// HasRecentSquawkAlert checks if an alert was already inserted in this stub.
+func (s *stubAlertStore) HasRecentSquawkAlert(_ context.Context, icao24, squawk string, _ time.Duration) (bool, error) {
+	for _, a := range s.alerts {
+		if a.icao24 == icao24 && a.squawk == squawk {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // stubEnricher records enrichment calls.
 type stubEnricher struct {
 	enriched []string

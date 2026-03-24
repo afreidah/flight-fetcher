@@ -55,6 +55,26 @@ func (q *Queries) GetRecentSquawkAlerts(ctx context.Context, seenAt pgtype.Times
 	return items, nil
 }
 
+const hasRecentSquawkAlert = `-- name: HasRecentSquawkAlert :one
+SELECT EXISTS(
+  SELECT 1 FROM squawk_alerts
+  WHERE icao24 = $1 AND squawk = $2 AND seen_at > $3
+) AS exists
+`
+
+type HasRecentSquawkAlertParams struct {
+	Icao24 string
+	Squawk string
+	SeenAt pgtype.Timestamptz
+}
+
+func (q *Queries) HasRecentSquawkAlert(ctx context.Context, arg HasRecentSquawkAlertParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasRecentSquawkAlert, arg.Icao24, arg.Squawk, arg.SeenAt)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const insertSquawkAlert = `-- name: InsertSquawkAlert :exec
 INSERT INTO squawk_alerts (icao24, callsign, squawk, lat, lon, seen_at)
 VALUES ($1, $2, $3, $4, $5, $6)

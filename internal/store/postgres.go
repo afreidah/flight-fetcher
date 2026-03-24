@@ -158,6 +158,16 @@ func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*a
 	}, nil
 }
 
+// HasRecentSquawkAlert checks if an alert for the given icao24 and squawk
+// code exists within the cooldown window.
+func (p *PostgresStore) HasRecentSquawkAlert(ctx context.Context, icao24, squawk string, cooldown time.Duration) (bool, error) {
+	return p.queries.HasRecentSquawkAlert(ctx, db.HasRecentSquawkAlertParams{
+		Icao24: icao24,
+		Squawk: squawk,
+		SeenAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-cooldown), Valid: true},
+	})
+}
+
 // InsertSquawkAlert records an emergency squawk detection.
 func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign, squawk string, lat, lon float64) error {
 	return p.queries.InsertSquawkAlert(ctx, db.InsertSquawkAlertParams{
