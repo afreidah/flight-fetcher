@@ -162,7 +162,7 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 			slog.String("icao24", icao24),
 			slog.String("error", err.Error()))
 	}
-	if meta != nil && meta.Registration == "" && meta.ManufacturerName == "" && meta.Type == "" {
+	if meta != nil && meta.IsSentinel() {
 		meta = nil
 	}
 	detail.Aircraft = meta
@@ -207,7 +207,7 @@ func (s *Server) handleGetAircraft(w http.ResponseWriter, r *http.Request) {
 			slog.String("error", err.Error()))
 		return
 	}
-	if meta == nil || (meta.Registration == "" && meta.ManufacturerName == "" && meta.Type == "") {
+	if meta == nil || meta.IsSentinel() {
 		http.Error(w, "aircraft not found", http.StatusNotFound)
 		return
 	}

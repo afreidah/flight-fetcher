@@ -22,3 +22,9 @@ type AircraftInfo struct {
 	Type             string `json:"Type"`
 	OperatorFlagCode string `json:"OperatorFlagCode"`
 }
+
+// IsSentinel returns true if the record is a negative cache entry with no
+// actual metadata.
+func (a *AircraftInfo) IsSentinel() bool {
+	return a.Registration == "" && a.ManufacturerName == "" && a.Type == ""
+}
