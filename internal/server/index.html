@@ -66,6 +66,16 @@
     var cachedFlights = [];
     var flightMap = {};
 
+    function buildHeader(f) {
+      return '<span class="icao">' + esc(f.icao24) + '</span>' +
+        '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
+        '<span class="field">' + esc(f.origin_country || "-") + '</span>' +
+        '<span class="field">Alt: ' + fmtFt(f.baro_altitude) + '</span>' +
+        '<span class="field">Spd: ' + fmtMph(f.velocity) + '</span>' +
+        '<span class="field">Hdg: ' + fmt(f.heading, "deg") + '</span>' +
+        (f.squawk ? '<span class="field">' + squawkLabel(f.squawk) + '</span>' : '');
+    }
+
     async function loadFlights() {
       try {
         var resp = await fetch("/api/flights");
@@ -78,35 +88,78 @@
         flightMap = {};
         flights.forEach(function(f) { flightMap[f.icao24] = f; });
         document.getElementById("status").textContent = flights.length + " aircraft in range";
+
         var el = document.getElementById("flights");
-        el.innerHTML = "";
         flights.sort(function(a, b) { return a.icao24.localeCompare(b.icao24); });
-        flights.forEach(function(f) {
-          var div = document.createElement("div");
-          div.className = "row" + (expanded === f.icao24 ? " expanded" : "");
-          div.innerHTML =
-            '<div class="row-header" onclick="toggleFlight(\'' + esc(f.icao24) + '\')">' +
-              '<span class="icao">' + esc(f.icao24) + '</span>' +
-              '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
-              '<span class="field">' + esc(f.origin_country || "-") + '</span>' +
-              '<span class="field">Alt: ' + fmtFt(f.baro_altitude) + '</span>' +
-              '<span class="field">Spd: ' + fmtMph(f.velocity) + '</span>' +
-              '<span class="field">Hdg: ' + fmt(f.heading, "deg") + '</span>' +
-              (f.squawk ? '<span class="field">' + squawkLabel(f.squawk) + '</span>' : '') +
-            '</div>' +
-            '<div class="row-detail" id="detail-' + esc(f.icao24) + '"></div>';
-          el.appendChild(div);
+
+        // Build set of current ICAO24s
+        var current = {};
+        flights.forEach(function(f) { current[f.icao24] = f; });
+
+        // Remove rows for aircraft that left
+        var existing = el.querySelectorAll(".row[data-icao]");
+        existing.forEach(function(row) {
+          if (!current[row.dataset.icao]) row.remove();
         });
-        if (expanded && !expanded.startsWith("squawk-")) loadDetail(expanded);
+
+        // Update existing rows or add new ones
+        flights.forEach(function(f) {
+          var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
+          if (row) {
+            // Update header content in place
+            var header = row.querySelector(".row-header");
+            if (header) header.innerHTML = buildHeader(f);
+          } else {
+            // New aircraft - create row
+            row = document.createElement("div");
+            row.className = "row";
+            row.dataset.icao = f.icao24;
+            row.innerHTML =
+              '<div class="row-header" onclick="toggleFlight(\'' + esc(f.icao24) + '\')">' +
+                buildHeader(f) +
+              '</div>' +
+              '<div class="row-detail" id="detail-' + esc(f.icao24) + '"></div>';
+            el.appendChild(row);
+          }
+          // Preserve expanded state
+          if (expanded === f.icao24) {
+            row.classList.add("expanded");
+          } else {
+            row.classList.remove("expanded");
+          }
+        });
+
+        // Re-sort DOM to match sorted order
+        flights.forEach(function(f) {
+          var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
+          if (row) el.appendChild(row);
+        });
+
+        if (expanded && !expanded.startsWith("squawk-")) {
+          var detail = document.getElementById("detail-" + expanded);
+          if (detail && detail.innerHTML === "") loadDetail(expanded);
+        }
       } catch (e) {
         document.getElementById("status").textContent = "Error loading flights";
       }
     }
 
     async function toggleFlight(icao24) {
-      if (expanded === icao24) { expanded = null; loadFlights(); return; }
+      var el = document.getElementById("flights");
+      // Collapse previous
+      if (expanded) {
+        var prev = el.querySelector('.row[data-icao="' + expanded + '"]');
+        if (prev) prev.classList.remove("expanded");
+        if (activeMap) { activeMap.remove(); activeMap = null; }
+      }
+      if (expanded === icao24) { expanded = null; return; }
+      // Expand new
       expanded = icao24;
-      loadFlights();
+      var row = el.querySelector('.row[data-icao="' + icao24 + '"]');
+      if (row) {
+        row.classList.add("expanded");
+        loadDetail(icao24);
+      }
     }
 
     var activeMap = null;
