@@ -21,8 +21,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
-
-	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
+	"github.com/afreidah/flight-fetcher/internal/squawk"
 )
 
 // -------------------------------------------------------------------------
@@ -47,7 +46,7 @@ type RouteReader interface {
 
 // SquawkAlertReader retrieves recent emergency squawk alerts.
 type SquawkAlertReader interface {
-	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]db.SquawkAlert, error)
+	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error)
 }
 
 // -------------------------------------------------------------------------
