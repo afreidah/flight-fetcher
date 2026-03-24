@@ -11,6 +11,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
@@ -126,11 +128,58 @@ func (c *RetentionConfig) RetentionDurations() (sightings, alerts, interval time
 	return sightings, alerts, interval, nil
 }
 
-// Load reads and decodes an HCL configuration file at the given path.
+// Load reads and decodes an HCL configuration file at the given path,
+// then validates the configuration values.
 func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := hclsimple.DecodeFile(path, nil, &cfg); err != nil {
 		return nil, err
 	}
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	return &cfg, nil
+}
+
+// -------------------------------------------------------------------------
+// INTERNALS
+// -------------------------------------------------------------------------
+
+// validate checks that all required fields are present and values are sane.
+func (c *Config) validate() error {
+	if c.Location.Lat < -90 || c.Location.Lat > 90 {
+		return fmt.Errorf("location.lat must be between -90 and 90, got %f", c.Location.Lat)
+	}
+	if c.Location.Lon < -180 || c.Location.Lon > 180 {
+		return fmt.Errorf("location.lon must be between -180 and 180, got %f", c.Location.Lon)
+	}
+	if c.Location.RadiusKm <= 0 {
+		return errors.New("location.radius_km must be positive")
+	}
+	if _, err := c.PollDuration(); err != nil {
+		return fmt.Errorf("poll_interval: %w", err)
+	}
+	if c.OpenSky.ID == "" || c.OpenSky.Secret == "" {
+		return errors.New("opensky.id and opensky.secret are required")
+	}
+	if c.Redis.Addr == "" {
+		return errors.New("redis.addr is required")
+	}
+	if c.Postgres.DSN == "" {
+		return errors.New("postgres.dsn is required")
+	}
+	if c.AirLabs != nil && c.AirLabs.APIKey == "" {
+		return errors.New("airlabs.api_key is required when airlabs block is present")
+	}
+	if c.SquawkMonitor != nil {
+		if _, err := c.SquawkMonitor.SquawkMonitorDuration(); err != nil {
+			return fmt.Errorf("squawk_monitor.interval: %w", err)
+		}
+	}
+	if c.Retention != nil {
+		if _, _, _, err := c.Retention.RetentionDurations(); err != nil {
+			return fmt.Errorf("retention: %w", err)
+		}
+	}
+	return nil
 }
