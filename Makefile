@@ -85,5 +85,16 @@ push: ## Build and push multi-arch images to registry
 	  --output type=image,push=true \
 	  .
 
-.PHONY: help generate migration vet govulncheck lint test build run stop clean push
+# -------------------------------------------------------------------------
+# RELEASE
+# -------------------------------------------------------------------------
+
+changelog: ## Generate CHANGELOG.md from git history
+	git cliff -o CHANGELOG.md
+
+release: ## Tag and push to trigger a GitHub Release (reads .version)
+	git tag $(VERSION)
+	git push origin $(VERSION)
+
+.PHONY: help generate migration vet govulncheck lint test build run stop clean push changelog release
 .DEFAULT_GOAL := help

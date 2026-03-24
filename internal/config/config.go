@@ -38,8 +38,8 @@ type Config struct {
 	Retention     *RetentionConfig     `hcl:"retention,block"`
 
 	// Parsed durations populated by validate()
-	Poll           time.Duration `json:"-"`
-	EnrichInterval time.Duration `json:"-"`
+	Poll           time.Duration
+	EnrichInterval time.Duration
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -95,7 +95,7 @@ type FlightAwareConfig struct {
 // SquawkMonitorConfig holds settings for the global emergency squawk monitor.
 type SquawkMonitorConfig struct {
 	Interval string        `hcl:"interval"`
-	Poll     time.Duration `json:"-"`
+	Poll     time.Duration
 }
 
 // RetentionConfig holds settings for automatic data cleanup.
@@ -105,10 +105,10 @@ type RetentionConfig struct {
 	RoutesMaxAge    string `hcl:"routes_max_age,optional"`
 	Interval        string `hcl:"interval,optional"`
 
-	Sightings      time.Duration `json:"-"`
-	Alerts         time.Duration `json:"-"`
-	Routes         time.Duration `json:"-"`
-	CleanInterval  time.Duration `json:"-"`
+	Sightings     time.Duration
+	Alerts        time.Duration
+	Routes        time.Duration
+	CleanInterval time.Duration
 }
 
 // -------------------------------------------------------------------------
