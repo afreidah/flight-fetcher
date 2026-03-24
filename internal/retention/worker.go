@@ -14,6 +14,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/afreidah/flight-fetcher/internal/runloop"
 )
 
 // -------------------------------------------------------------------------
@@ -54,24 +56,10 @@ func New(cleaner Cleaner, sightingsAge, alertsAge, interval time.Duration) *Work
 
 // Run starts the cleanup loop. Blocks until ctx is cancelled.
 func (w *Worker) Run(ctx context.Context) {
-	ticker := time.NewTicker(w.interval)
-	defer ticker.Stop()
-
-	slog.InfoContext(ctx, "retention worker started",
+	slog.InfoContext(ctx, "retention worker config",
 		slog.String("sightings_max_age", w.sightingsAge.String()),
-		slog.String("alerts_max_age", w.alertsAge.String()),
-		slog.String("interval", w.interval.String()))
-
-	w.cleanup(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			slog.InfoContext(ctx, "retention worker stopped")
-			return
-		case <-ticker.C:
-			w.cleanup(ctx)
-		}
-	}
+		slog.String("alerts_max_age", w.alertsAge.String()))
+	runloop.Run(ctx, "retention worker", w.interval, w.cleanup)
 }
 
 // -------------------------------------------------------------------------
