@@ -293,13 +293,13 @@
         var html = '<h2 class="section-title">Global Emergency Squawk Alerts (last 24h)</h2>';
         cachedAlerts.forEach(function(a, i) {
           var id = "squawk-" + i;
-          var label = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"}[a.Squawk] || a.Squawk;
-          var time = new Date(a.SeenAt).toLocaleString();
+          var label = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"}[a.squawk] || a.squawk;
+          var time = new Date(a.seen_at).toLocaleString();
           html += '<div class="row squawk-row' + (selected === id ? ' selected' : '') + '">' +
             '<div class="row-header" onclick="selectSquawk(\'' + id + '\')">' +
-              '<span class="icao squawk-emergency">' + esc(a.Squawk) + ' ' + esc(label) + '</span>' +
-              '<span class="callsign">' + esc(a.Icao24) + '</span>' +
-              (a.Callsign ? '<span class="field">' + esc(a.Callsign) + '</span>' : '') +
+              '<span class="icao squawk-emergency">' + esc(a.squawk) + ' ' + esc(label) + '</span>' +
+              '<span class="callsign">' + esc(a.icao24) + '</span>' +
+              (a.callsign ? '<span class="field">' + esc(a.callsign) + '</span>' : '') +
               '<span class="field">' + esc(time) + '</span>' +
             '</div>' +
           '</div>';
@@ -333,14 +333,14 @@
       var el = document.getElementById("detail");
       var t = '<table>';
       t += section("Alert Details");
-      t += row("ICAO24", alert.Icao24);
-      t += row("Callsign", alert.Callsign || "-");
-      t += row("Squawk", squawkLabel(alert.Squawk));
-      t += row("Latitude", alert.Lat);
-      t += row("Longitude", alert.Lon);
-      t += row("Seen At", new Date(alert.SeenAt).toLocaleString());
+      t += row("ICAO24", alert.icao24);
+      t += row("Callsign", alert.callsign || "-");
+      t += row("Squawk", squawkLabel(alert.squawk));
+      t += row("Latitude", alert.lat);
+      t += row("Longitude", alert.lon);
+      t += row("Seen At", new Date(alert.seen_at).toLocaleString());
       try {
-        var metaResp = await fetch("/api/aircraft/" + encodeURIComponent(alert.Icao24));
+        var metaResp = await fetch("/api/aircraft/" + encodeURIComponent(alert.icao24));
         if (metaResp.ok) {
           var a = await metaResp.json();
           t += section("Aircraft Metadata");
@@ -350,9 +350,9 @@
           t += row("Operator", a.OperatorFlagCode || "-");
         }
       } catch (e) {}
-      if (alert.Callsign) {
+      if (alert.callsign) {
         try {
-          var routeResp = await fetch("/api/routes/" + encodeURIComponent(alert.Callsign));
+          var routeResp = await fetch("/api/routes/" + encodeURIComponent(alert.callsign));
           if (routeResp.ok) {
             var r = await routeResp.json();
             t += section("Route");
@@ -364,8 +364,8 @@
       t += '</table>';
       el.innerHTML = t;
       // Pan map to alert location
-      if (alert.Lat && alert.Lon) {
-        map.panTo([alert.Lat, alert.Lon]);
+      if (alert.lat && alert.lon) {
+        map.panTo([alert.lat, alert.lon]);
         map.setZoom(6);
       }
     }

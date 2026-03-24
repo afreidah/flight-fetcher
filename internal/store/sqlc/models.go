@@ -24,6 +24,7 @@ type FlightRoute struct {
 	ArrIata  string
 	ArrIcao  string
 	ArrName  string
+	CachedAt pgtype.Timestamptz
 }
 
 type Sighting struct {

@@ -97,6 +97,7 @@ type SquawkMonitorConfig struct {
 type RetentionConfig struct {
 	SightingsMaxAge string `hcl:"sightings_max_age"`
 	AlertsMaxAge    string `hcl:"alerts_max_age"`
+	RoutesMaxAge    string `hcl:"routes_max_age,optional"`
 	Interval        string `hcl:"interval,optional"`
 }
 
@@ -124,25 +125,33 @@ func (c *SquawkMonitorConfig) SquawkMonitorDuration() (time.Duration, error) {
 }
 
 // RetentionDurations parses the retention config into durations. Interval
-// defaults to 1 hour if not specified.
-func (c *RetentionConfig) RetentionDurations() (sightings, alerts, interval time.Duration, err error) {
+// defaults to 1 hour and routes_max_age defaults to 24 hours if not specified.
+func (c *RetentionConfig) RetentionDurations() (sightings, alerts, routes, interval time.Duration, err error) {
 	sightings, err = time.ParseDuration(c.SightingsMaxAge)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, 0, err
 	}
 	alerts, err = time.ParseDuration(c.AlertsMaxAge)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, 0, err
+	}
+	if c.RoutesMaxAge != "" {
+		routes, err = time.ParseDuration(c.RoutesMaxAge)
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+	} else {
+		routes = 24 * time.Hour
 	}
 	if c.Interval != "" {
 		interval, err = time.ParseDuration(c.Interval)
 		if err != nil {
-			return 0, 0, 0, err
+			return 0, 0, 0, 0, err
 		}
 	} else {
 		interval = time.Hour
 	}
-	return sightings, alerts, interval, nil
+	return sightings, alerts, routes, interval, nil
 }
 
 // Load reads and decodes an HCL configuration file at the given path,
@@ -197,7 +206,7 @@ func (c *Config) validate() error {
 		}
 	}
 	if c.Retention != nil {
-		if _, _, _, err := c.Retention.RetentionDurations(); err != nil {
+		if _, _, _, _, err := c.Retention.RetentionDurations(); err != nil {
 			return fmt.Errorf("retention: %w", err)
 		}
 	}

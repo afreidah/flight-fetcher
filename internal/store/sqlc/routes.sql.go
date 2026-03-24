@@ -7,17 +7,43 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const deleteOldRoutes = `-- name: DeleteOldRoutes :execresult
+DELETE FROM flight_routes WHERE cached_at < $1
+`
+
+func (q *Queries) DeleteOldRoutes(ctx context.Context, cachedAt pgtype.Timestamptz) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, deleteOldRoutes, cachedAt)
+}
 
 const getFlightRoute = `-- name: GetFlightRoute :one
 SELECT callsign, dep_iata, dep_icao, dep_name, arr_iata, arr_icao, arr_name
 FROM flight_routes
-WHERE callsign = $1
+WHERE callsign = $1 AND cached_at > $2
 `
 
-func (q *Queries) GetFlightRoute(ctx context.Context, callsign string) (FlightRoute, error) {
-	row := q.db.QueryRow(ctx, getFlightRoute, callsign)
-	var i FlightRoute
+type GetFlightRouteParams struct {
+	Callsign string
+	CachedAt pgtype.Timestamptz
+}
+
+type GetFlightRouteRow struct {
+	Callsign string
+	DepIata  string
+	DepIcao  string
+	DepName  string
+	ArrIata  string
+	ArrIcao  string
+	ArrName  string
+}
+
+func (q *Queries) GetFlightRoute(ctx context.Context, arg GetFlightRouteParams) (GetFlightRouteRow, error) {
+	row := q.db.QueryRow(ctx, getFlightRoute, arg.Callsign, arg.CachedAt)
+	var i GetFlightRouteRow
 	err := row.Scan(
 		&i.Callsign,
 		&i.DepIata,
@@ -31,15 +57,16 @@ func (q *Queries) GetFlightRoute(ctx context.Context, callsign string) (FlightRo
 }
 
 const upsertFlightRoute = `-- name: UpsertFlightRoute :exec
-INSERT INTO flight_routes (callsign, dep_iata, dep_icao, dep_name, arr_iata, arr_icao, arr_name)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO flight_routes (callsign, dep_iata, dep_icao, dep_name, arr_iata, arr_icao, arr_name, cached_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (callsign) DO UPDATE SET
     dep_iata = EXCLUDED.dep_iata,
     dep_icao = EXCLUDED.dep_icao,
     dep_name = EXCLUDED.dep_name,
     arr_iata = EXCLUDED.arr_iata,
     arr_icao = EXCLUDED.arr_icao,
-    arr_name = EXCLUDED.arr_name
+    arr_name = EXCLUDED.arr_name,
+    cached_at = now()
 `
 
 type UpsertFlightRouteParams struct {
