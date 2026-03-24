@@ -60,7 +60,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 		Return(true).
 		Times(1)
 
-	p := New(source, cache, logger, enricher, center, radiusKm, time.Minute, time.Hour)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: radiusKm, Interval: time.Minute, EvictInterval: time.Hour})
 	p.poll(context.Background())
 }
 
@@ -78,7 +78,7 @@ func TestPoll_SourceError(t *testing.T) {
 		GetStates(gomock.Any(), gomock.Any()).
 		Return(nil, errors.New("api down"))
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	p.poll(context.Background())
 }
 
@@ -114,7 +114,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any())
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	p.poll(context.Background())
 }
 
@@ -150,7 +150,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any())
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	p.poll(context.Background())
 }
 
@@ -192,7 +192,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 		Return(true).
 		Times(1)
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	p.poll(context.Background())
 	p.poll(context.Background())
 }
@@ -238,7 +238,7 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 		Times(2)
 
 	// Use nanosecond eviction so it triggers on every poll after the first
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Nanosecond)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Nanosecond})
 	p.poll(context.Background()) // enriches, marks seen
 	time.Sleep(time.Millisecond)
 	p.poll(context.Background()) // eviction fires, clears maps, re-enriches
@@ -258,6 +258,6 @@ func TestPoll_EmptyResponse(t *testing.T) {
 		GetStates(gomock.Any(), gomock.Any()).
 		Return(&opensky.StatesResponse{Time: 1234, States: nil}, nil)
 
-	p := New(source, cache, logger, enricher, center, 50.0, time.Minute, time.Hour)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	p.poll(context.Background())
 }

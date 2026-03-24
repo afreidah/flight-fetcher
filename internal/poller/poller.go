@@ -53,58 +53,47 @@ type FlightEnricher interface {
 // TYPES
 // -------------------------------------------------------------------------
 
+// Options holds the dependencies and configuration for the poller.
+type Options struct {
+	Source        FlightSource
+	Cache         FlightCache
+	Logger        SightingLogger
+	Enricher      FlightEnricher
+	Center        geo.Coord
+	RadiusKm      float64
+	Interval      time.Duration
+	EvictInterval time.Duration
+}
+
 // Poller periodically queries a flight source for aircraft near a fixed location.
 type Poller struct {
-	source        FlightSource
-	cache         FlightCache
-	logger        SightingLogger
-	enricher      FlightEnricher
-	center        geo.Coord
-	radiusKm      float64
-	interval      time.Duration
-	seenICAO      map[string]bool
-	seenRoutes    map[string]bool
-	evictInterval time.Duration
-	lastEvict     time.Time
+	opts       Options
+	seenICAO   map[string]bool
+	seenRoutes map[string]bool
+	lastEvict  time.Time
 }
 
 // -------------------------------------------------------------------------
 // PUBLIC API
 // -------------------------------------------------------------------------
 
-// New creates a Poller with the given dependencies and configuration.
-func New(
-	source FlightSource,
-	cache FlightCache,
-	logger SightingLogger,
-	enr FlightEnricher,
-	center geo.Coord,
-	radiusKm float64,
-	interval time.Duration,
-	evictInterval time.Duration,
-) *Poller {
+// New creates a Poller with the given options.
+func New(opts *Options) *Poller {
 	return &Poller{
-		source:        source,
-		cache:         cache,
-		logger:        logger,
-		enricher:      enr,
-		center:        center,
-		radiusKm:      radiusKm,
-		interval:      interval,
-		seenICAO:      make(map[string]bool),
-		seenRoutes:    make(map[string]bool),
-		evictInterval: evictInterval,
-		lastEvict:     time.Now(),
+		opts:       *opts,
+		seenICAO:   make(map[string]bool),
+		seenRoutes: make(map[string]bool),
+		lastEvict:  time.Now(),
 	}
 }
 
 // Run starts the polling loop. Blocks until ctx is cancelled.
 func (p *Poller) Run(ctx context.Context) {
 	slog.InfoContext(ctx, "poller config",
-		slog.Float64("lat", p.center.Lat),
-		slog.Float64("lon", p.center.Lon),
-		slog.Float64("radius_km", p.radiusKm))
-	runloop.Run(ctx, "poller", p.interval, p.poll)
+		slog.Float64("lat", p.opts.Center.Lat),
+		slog.Float64("lon", p.opts.Center.Lon),
+		slog.Float64("radius_km", p.opts.RadiusKm))
+	runloop.Run(ctx, "poller", p.opts.Interval, p.poll)
 }
 
 // -------------------------------------------------------------------------
@@ -114,7 +103,7 @@ func (p *Poller) Run(ctx context.Context) {
 // poll executes a single poll cycle: query source, filter by distance,
 // store state, log sightings, and enrich new aircraft.
 func (p *Poller) poll(ctx context.Context) {
-	if time.Since(p.lastEvict) >= p.evictInterval {
+	if time.Since(p.lastEvict) >= p.opts.EvictInterval {
 		slog.InfoContext(ctx, "evicting enrichment cache",
 			slog.Int("icao_count", len(p.seenICAO)),
 			slog.Int("route_count", len(p.seenRoutes)))
@@ -123,8 +112,8 @@ func (p *Poller) poll(ctx context.Context) {
 		p.lastEvict = time.Now()
 	}
 
-	bbox := geo.BBoxAround(p.center, p.radiusKm)
-	resp, err := p.source.GetStates(ctx, bbox)
+	bbox := geo.BBoxAround(p.opts.Center, p.opts.RadiusKm)
+	resp, err := p.opts.Source.GetStates(ctx, bbox)
 	if err != nil {
 		slog.WarnContext(ctx, "poll failed", slog.String("error", err.Error()))
 		return
@@ -132,30 +121,30 @@ func (p *Poller) poll(ctx context.Context) {
 
 	count := 0
 	for _, sv := range resp.States {
-		dist := geo.HaversineKm(p.center, geo.Coord{Lat: sv.Latitude, Lon: sv.Longitude})
-		if dist > p.radiusKm {
+		dist := geo.HaversineKm(p.opts.Center, geo.Coord{Lat: sv.Latitude, Lon: sv.Longitude})
+		if dist > p.opts.RadiusKm {
 			continue
 		}
 
-		if err := p.cache.SetFlight(ctx, &sv); err != nil {
+		if err := p.opts.Cache.SetFlight(ctx, &sv); err != nil {
 			slog.WarnContext(ctx, "cache write failed",
 				slog.String("icao24", sv.ICAO24),
 				slog.String("error", err.Error()))
 		}
 
-		if err := p.logger.LogSighting(ctx, sv.ICAO24, sv.Latitude, sv.Longitude, dist); err != nil {
+		if err := p.opts.Logger.LogSighting(ctx, sv.ICAO24, sv.Latitude, sv.Longitude, dist); err != nil {
 			slog.WarnContext(ctx, "sighting log failed",
 				slog.String("icao24", sv.ICAO24),
 				slog.String("error", err.Error()))
 		}
 
 		if !p.seenICAO[sv.ICAO24] {
-			if p.enricher.Enrich(ctx, sv.ICAO24) {
+			if p.opts.Enricher.Enrich(ctx, sv.ICAO24) {
 				p.seenICAO[sv.ICAO24] = true
 			}
 		}
 		if callsign := strings.TrimSpace(sv.Callsign); callsign != "" && !p.seenRoutes[callsign] {
-			if p.enricher.EnrichRoute(ctx, callsign) {
+			if p.opts.Enricher.EnrichRoute(ctx, callsign) {
 				p.seenRoutes[callsign] = true
 			}
 		}
@@ -164,5 +153,5 @@ func (p *Poller) poll(ctx context.Context) {
 
 	slog.InfoContext(ctx, "poll complete",
 		slog.Int("aircraft_count", count),
-		slog.Float64("radius_km", p.radiusKm))
+		slog.Float64("radius_km", p.opts.RadiusKm))
 }

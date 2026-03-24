@@ -98,15 +98,29 @@ func main() {
 	}
 
 	enr := enricher.New(hexdbClient, pgStore, routeLookup, routeFallback, routeStore)
-	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
-	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval, enrichRefresh)
-
+	p := poller.New(&poller.Options{
+		Source:        oskyClient,
+		Cache:         redisStore,
+		Logger:        pgStore,
+		Enricher:      enr,
+		Center:        geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon},
+		RadiusKm:      cfg.Location.RadiusKm,
+		Interval:      pollInterval,
+		EvictInterval: enrichRefresh,
+	})
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	if cfg.Server != nil && cfg.Server.Listen != "" {
-		srv := server.New(redisStore, pgStore, pgStore, pgStore, Version, cfg.Server.RefreshSeconds())
+		srv := server.New(&server.Options{
+			Flights:    redisStore,
+			Aircraft:   pgStore,
+			Routes:     pgStore,
+			Alerts:     pgStore,
+			Version:    Version,
+			RefreshSec: cfg.Server.RefreshSeconds(),
+		})
 		go srv.ListenAndServe(ctx, cfg.Server.Listen)
 	}
 
