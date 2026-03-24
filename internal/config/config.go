@@ -30,7 +30,8 @@ type Config struct {
 	Redis        RedisConfig    `hcl:"redis,block"`
 	Postgres     PostgresConfig `hcl:"postgres,block"`
 	Server       *ServerConfig       `hcl:"server,block"`
-	AirLabs      *AirLabsConfig     `hcl:"airlabs,block"`
+	AirLabs      *AirLabsConfig      `hcl:"airlabs,block"`
+	FlightAware  *FlightAwareConfig  `hcl:"flightaware,block"`
 	SquawkMonitor *SquawkMonitorConfig `hcl:"squawk_monitor,block"`
 	Retention     *RetentionConfig     `hcl:"retention,block"`
 }
@@ -77,6 +78,11 @@ func (c *ServerConfig) RefreshSeconds() int {
 
 // AirLabsConfig holds credentials for the AirLabs flight data API.
 type AirLabsConfig struct {
+	APIKey string `hcl:"api_key"`
+}
+
+// FlightAwareConfig holds credentials for the FlightAware AeroAPI.
+type FlightAwareConfig struct {
 	APIKey string `hcl:"api_key"`
 }
 
@@ -170,6 +176,9 @@ func (c *Config) validate() error {
 	}
 	if c.AirLabs != nil && c.AirLabs.APIKey == "" {
 		return errors.New("airlabs.api_key is required when airlabs block is present")
+	}
+	if c.FlightAware != nil && c.FlightAware.APIKey == "" {
+		return errors.New("flightaware.api_key is required when flightaware block is present")
 	}
 	if c.SquawkMonitor != nil {
 		if _, err := c.SquawkMonitor.SquawkMonitorDuration(); err != nil {

@@ -38,6 +38,11 @@ airlabs {
   api_key = "YOUR_API_KEY"
 }
 
+# Optional: FlightAware AeroAPI as fallback for route lookups (500 req/month free)
+flightaware {
+  api_key = "YOUR_API_KEY"
+}
+
 # Optional: global emergency squawk monitoring (7500/7600/7700)
 squawk_monitor {
   interval = "60s"

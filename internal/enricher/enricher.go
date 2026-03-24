@@ -53,10 +53,11 @@ type RouteLookup interface {
 
 // Enricher looks up and caches aircraft metadata and flight route information.
 type Enricher struct {
-	lookup      AircraftLookup
-	store       AircraftStore
-	routeLookup RouteLookup
-	routeStore  RouteStore
+	lookup          AircraftLookup
+	store           AircraftStore
+	routeLookup     RouteLookup
+	routeFallback   RouteLookup
+	routeStore      RouteStore
 }
 
 // -------------------------------------------------------------------------
@@ -65,12 +66,14 @@ type Enricher struct {
 
 // New creates an Enricher backed by the given lookup client and metadata store.
 // Route enrichment is enabled when routeLookup and routeStore are non-nil.
-func New(lookup AircraftLookup, store AircraftStore, routeLookup RouteLookup, routeStore RouteStore) *Enricher {
+// An optional fallback RouteLookup is tried when the primary fails.
+func New(lookup AircraftLookup, store AircraftStore, routeLookup RouteLookup, routeFallback RouteLookup, routeStore RouteStore) *Enricher {
 	return &Enricher{
-		lookup:      lookup,
-		store:       store,
-		routeLookup: routeLookup,
-		routeStore:  routeStore,
+		lookup:        lookup,
+		store:         store,
+		routeLookup:   routeLookup,
+		routeFallback: routeFallback,
+		routeStore:    routeStore,
 	}
 }
 
@@ -138,10 +141,20 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 
 	route, err := e.routeLookup.LookupRoute(ctx, callsign)
 	if err != nil {
-		slog.WarnContext(ctx, "airlabs route lookup failed",
+		slog.WarnContext(ctx, "primary route lookup failed",
 			slog.String("callsign", callsign),
 			slog.String("error", err.Error()))
-		return false
+		if e.routeFallback != nil {
+			route, err = e.routeFallback.LookupRoute(ctx, callsign)
+			if err != nil {
+				slog.WarnContext(ctx, "fallback route lookup failed",
+					slog.String("callsign", callsign),
+					slog.String("error", err.Error()))
+				return false
+			}
+		} else {
+			return false
+		}
 	}
 	if route == nil {
 		slog.DebugContext(ctx, "no route data found",
