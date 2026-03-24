@@ -51,16 +51,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	pollInterval, err := cfg.PollDuration()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to parse poll interval", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
 	oskyClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 	hexdbClient := hexdb.NewClient()
 
-	redisTTL := pollInterval * 3
+	redisTTL := cfg.Poll * 3
 	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, redisTTL)
 	defer redisStore.Close()
 
@@ -91,12 +85,6 @@ func main() {
 		}
 	}
 
-	enrichRefresh, err := cfg.EnrichmentRefreshDuration()
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to parse enrichment_refresh", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
 	enr := enricher.New(hexdbClient, pgStore, routeLookup, routeFallback, routeStore)
 	p := poller.New(&poller.Options{
 		Source:        oskyClient,
@@ -105,8 +93,8 @@ func main() {
 		Enricher:      enr,
 		Center:        geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon},
 		RadiusKm:      cfg.Location.RadiusKm,
-		Interval:      pollInterval,
-		EvictInterval: enrichRefresh,
+		Interval:      cfg.Poll,
+		EvictInterval: cfg.EnrichInterval,
 	})
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -125,25 +113,14 @@ func main() {
 	}
 
 	if cfg.SquawkMonitor != nil {
-		interval, err := cfg.SquawkMonitor.SquawkMonitorDuration()
-		if err != nil {
-			slog.ErrorContext(ctx, "failed to parse squawk monitor interval",
-				slog.String("error", err.Error()))
-			os.Exit(1)
-		}
 		squawkClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
-		sm := squawk.New(squawkClient, pgStore, enr, interval)
+		sm := squawk.New(squawkClient, pgStore, enr, cfg.SquawkMonitor.Poll)
 		go sm.Run(ctx)
 	}
 
 	if cfg.Retention != nil {
-		sightingsAge, alertsAge, routesAge, interval, err := cfg.Retention.RetentionDurations()
-		if err != nil {
-			slog.ErrorContext(ctx, "failed to parse retention config",
-				slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-		rw := retention.New(pgStore, sightingsAge, alertsAge, routesAge, interval)
+		r := cfg.Retention
+		rw := retention.New(pgStore, r.Sightings, r.Alerts, r.Routes, r.CleanInterval)
 		go rw.Run(ctx)
 	}
 

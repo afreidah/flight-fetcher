@@ -36,6 +36,10 @@ type Config struct {
 	Server        *ServerConfig        `hcl:"server,block"`
 	SquawkMonitor *SquawkMonitorConfig `hcl:"squawk_monitor,block"`
 	Retention     *RetentionConfig     `hcl:"retention,block"`
+
+	// Parsed durations populated by validate()
+	Poll           time.Duration `json:"-"`
+	EnrichInterval time.Duration `json:"-"`
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -90,7 +94,8 @@ type FlightAwareConfig struct {
 
 // SquawkMonitorConfig holds settings for the global emergency squawk monitor.
 type SquawkMonitorConfig struct {
-	Interval string `hcl:"interval"`
+	Interval string        `hcl:"interval"`
+	Poll     time.Duration `json:"-"`
 }
 
 // RetentionConfig holds settings for automatic data cleanup.
@@ -99,60 +104,16 @@ type RetentionConfig struct {
 	AlertsMaxAge    string `hcl:"alerts_max_age"`
 	RoutesMaxAge    string `hcl:"routes_max_age,optional"`
 	Interval        string `hcl:"interval,optional"`
+
+	Sightings      time.Duration `json:"-"`
+	Alerts         time.Duration `json:"-"`
+	Routes         time.Duration `json:"-"`
+	CleanInterval  time.Duration `json:"-"`
 }
 
 // -------------------------------------------------------------------------
 // PUBLIC API
 // -------------------------------------------------------------------------
-
-// PollDuration parses the PollInterval string into a time.Duration.
-func (c *Config) PollDuration() (time.Duration, error) {
-	return time.ParseDuration(c.PollInterval)
-}
-
-// EnrichmentRefreshDuration parses the enrichment refresh interval.
-// Defaults to 1 hour if not set.
-func (c *Config) EnrichmentRefreshDuration() (time.Duration, error) {
-	if c.EnrichmentRefresh == "" {
-		return time.Hour, nil
-	}
-	return time.ParseDuration(c.EnrichmentRefresh)
-}
-
-// SquawkMonitorDuration parses the squawk monitor interval into a time.Duration.
-func (c *SquawkMonitorConfig) SquawkMonitorDuration() (time.Duration, error) {
-	return time.ParseDuration(c.Interval)
-}
-
-// RetentionDurations parses the retention config into durations. Interval
-// defaults to 1 hour and routes_max_age defaults to 24 hours if not specified.
-func (c *RetentionConfig) RetentionDurations() (sightings, alerts, routes, interval time.Duration, err error) {
-	sightings, err = time.ParseDuration(c.SightingsMaxAge)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	alerts, err = time.ParseDuration(c.AlertsMaxAge)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	if c.RoutesMaxAge != "" {
-		routes, err = time.ParseDuration(c.RoutesMaxAge)
-		if err != nil {
-			return 0, 0, 0, 0, err
-		}
-	} else {
-		routes = 24 * time.Hour
-	}
-	if c.Interval != "" {
-		interval, err = time.ParseDuration(c.Interval)
-		if err != nil {
-			return 0, 0, 0, 0, err
-		}
-	} else {
-		interval = time.Hour
-	}
-	return sightings, alerts, routes, interval, nil
-}
 
 // Load reads and decodes an HCL configuration file at the given path,
 // then validates the configuration values.
@@ -171,7 +132,8 @@ func Load(path string) (*Config, error) {
 // INTERNALS
 // -------------------------------------------------------------------------
 
-// validate checks that all required fields are present and values are sane.
+// validate checks that all required fields are present, values are sane,
+// and parses duration strings into the typed duration fields.
 func (c *Config) validate() error {
 	if c.Location.Lat < -90 || c.Location.Lat > 90 {
 		return fmt.Errorf("location.lat must be between -90 and 90, got %f", c.Location.Lat)
@@ -182,9 +144,21 @@ func (c *Config) validate() error {
 	if c.Location.RadiusKm <= 0 {
 		return errors.New("location.radius_km must be positive")
 	}
-	if _, err := c.PollDuration(); err != nil {
+
+	var err error
+	c.Poll, err = time.ParseDuration(c.PollInterval)
+	if err != nil {
 		return fmt.Errorf("poll_interval: %w", err)
 	}
+	if c.EnrichmentRefresh != "" {
+		c.EnrichInterval, err = time.ParseDuration(c.EnrichmentRefresh)
+		if err != nil {
+			return fmt.Errorf("enrichment_refresh: %w", err)
+		}
+	} else {
+		c.EnrichInterval = time.Hour
+	}
+
 	if c.OpenSky.ID == "" || c.OpenSky.Secret == "" {
 		return errors.New("opensky.id and opensky.secret are required")
 	}
@@ -201,13 +175,36 @@ func (c *Config) validate() error {
 		return errors.New("flightaware.api_key is required when flightaware block is present")
 	}
 	if c.SquawkMonitor != nil {
-		if _, err := c.SquawkMonitor.SquawkMonitorDuration(); err != nil {
+		c.SquawkMonitor.Poll, err = time.ParseDuration(c.SquawkMonitor.Interval)
+		if err != nil {
 			return fmt.Errorf("squawk_monitor.interval: %w", err)
 		}
 	}
 	if c.Retention != nil {
-		if _, _, _, _, err := c.Retention.RetentionDurations(); err != nil {
-			return fmt.Errorf("retention: %w", err)
+		r := c.Retention
+		r.Sightings, err = time.ParseDuration(r.SightingsMaxAge)
+		if err != nil {
+			return fmt.Errorf("retention.sightings_max_age: %w", err)
+		}
+		r.Alerts, err = time.ParseDuration(r.AlertsMaxAge)
+		if err != nil {
+			return fmt.Errorf("retention.alerts_max_age: %w", err)
+		}
+		if r.RoutesMaxAge != "" {
+			r.Routes, err = time.ParseDuration(r.RoutesMaxAge)
+			if err != nil {
+				return fmt.Errorf("retention.routes_max_age: %w", err)
+			}
+		} else {
+			r.Routes = 24 * time.Hour
+		}
+		if r.Interval != "" {
+			r.CleanInterval, err = time.ParseDuration(r.Interval)
+			if err != nil {
+				return fmt.Errorf("retention.interval: %w", err)
+			}
+		} else {
+			r.CleanInterval = time.Hour
 		}
 	}
 	return nil

@@ -122,18 +122,14 @@ retention {
 	if cfg.Retention == nil {
 		t.Fatal("Retention should not be nil when block is present")
 	}
-	sightings, alerts, _, interval, err := cfg.Retention.RetentionDurations()
-	if err != nil {
-		t.Fatalf("RetentionDurations() error = %v", err)
+	if cfg.Retention.Sightings != 720*time.Hour {
+		t.Errorf("sightings = %v, want 720h", cfg.Retention.Sightings)
 	}
-	if sightings != 720*time.Hour {
-		t.Errorf("sightings = %v, want 720h", sightings)
+	if cfg.Retention.Alerts != 168*time.Hour {
+		t.Errorf("alerts = %v, want 168h", cfg.Retention.Alerts)
 	}
-	if alerts != 168*time.Hour {
-		t.Errorf("alerts = %v, want 168h", alerts)
-	}
-	if interval != 2*time.Hour {
-		t.Errorf("interval = %v, want 2h", interval)
+	if cfg.Retention.CleanInterval != 2*time.Hour {
+		t.Errorf("interval = %v, want 2h", cfg.Retention.CleanInterval)
 	}
 }
 
@@ -171,12 +167,8 @@ retention {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	_, _, _, interval, err := cfg.Retention.RetentionDurations()
-	if err != nil {
-		t.Fatalf("RetentionDurations() error = %v", err)
-	}
-	if interval != time.Hour {
-		t.Errorf("interval = %v, want 1h (default)", interval)
+	if cfg.Retention.CleanInterval != time.Hour {
+		t.Errorf("interval = %v, want 1h (default)", cfg.Retention.CleanInterval)
 	}
 }
 
@@ -216,12 +208,8 @@ squawk_monitor {
 	if cfg.SquawkMonitor == nil {
 		t.Fatal("SquawkMonitor should not be nil when block is present")
 	}
-	d, err := cfg.SquawkMonitor.SquawkMonitorDuration()
-	if err != nil {
-		t.Fatalf("SquawkMonitorDuration() error = %v", err)
-	}
-	if d != 60*time.Second {
-		t.Errorf("SquawkMonitorDuration() = %v, want 60s", d)
+	if cfg.SquawkMonitor.Poll != 60*time.Second {
+		t.Errorf("SquawkMonitor.Poll = %v, want 60s", cfg.SquawkMonitor.Poll)
 	}
 }
 
@@ -324,24 +312,29 @@ func TestLoad_InvalidHCL(t *testing.T) {
 	}
 }
 
-// TestPollDuration_Valid verifies that a valid duration string is parsed correctly.
-func TestPollDuration_Valid(t *testing.T) {
-	cfg := &Config{PollInterval: "30s"}
-	d, err := cfg.PollDuration()
-	if err != nil {
-		t.Fatalf("PollDuration() error = %v", err)
-	}
-	if d.Seconds() != 30 {
-		t.Errorf("PollDuration() = %v, want 30s", d)
-	}
+// TestPollDuration_ParsedByLoad verifies that Load parses poll_interval into the Poll field.
+func TestPollDuration_ParsedByLoad(t *testing.T) {
+	content := `
+poll_interval = "30s"
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
 }
-
-// TestPollDuration_Invalid verifies that an invalid duration string returns an error.
-func TestPollDuration_Invalid(t *testing.T) {
-	cfg := &Config{PollInterval: "notaduration"}
-	_, err := cfg.PollDuration()
-	if err == nil {
-		t.Error("PollDuration() expected error for invalid duration, got nil")
+opensky {
+  id     = "t"
+  secret = "t"
+}
+redis { addr = "localhost:6379" }
+postgres { dsn = "postgres://localhost/test" }
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Poll != 30*time.Second {
+		t.Errorf("Poll = %v, want 30s", cfg.Poll)
 	}
 }
 
