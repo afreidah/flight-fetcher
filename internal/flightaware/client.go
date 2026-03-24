@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/airlabs"
+	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
 // -------------------------------------------------------------------------
@@ -46,9 +46,9 @@ func NewClient(apiKey string) *Client {
 }
 
 // LookupRoute fetches route information for a flight by callsign (ident).
-// Returns an airlabs.FlightRoute for compatibility with the existing enricher
+// Returns an route.Info for compatibility with the existing enricher
 // interface. Returns nil if the flight is not found.
-func (c *Client) LookupRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error) {
+func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info, error) {
 	callsign = strings.TrimSpace(callsign)
 	if callsign == "" {
 		return nil, nil
@@ -85,7 +85,7 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*airlabs.Fli
 	}
 
 	f := result.Flights[0]
-	return &airlabs.FlightRoute{
+	return &route.Info{
 		FlightICAO: callsign,
 		DepIATA:    f.Origin.CodeIATA,
 		DepICAO:    f.Origin.CodeICAO,

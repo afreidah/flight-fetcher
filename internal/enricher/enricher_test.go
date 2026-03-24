@@ -14,7 +14,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/afreidah/flight-fetcher/internal/airlabs"
+	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 
 	"go.uber.org/mock/gomock"
@@ -175,7 +175,7 @@ func TestEnrichRoute_AlreadyCached(t *testing.T) {
 
 	routeStore.EXPECT().
 		GetFlightRoute(gomock.Any(), "AAL2079").
-		Return(&airlabs.FlightRoute{FlightICAO: "AAL2079"}, nil)
+		Return(&route.Info{FlightICAO: "AAL2079"}, nil)
 
 	enr := New(nil, nil, routeLookup, nil, routeStore)
 	enr.EnrichRoute(context.Background(), "AAL2079")
@@ -187,7 +187,7 @@ func TestEnrichRoute_NewRoute_LookupSuccess(t *testing.T) {
 	routeStore := NewMockRouteStore(ctrl)
 	routeLookup := NewMockRouteLookup(ctrl)
 
-	route := &airlabs.FlightRoute{
+	route := &route.Info{
 		FlightICAO: "AAL2079",
 		DepIATA:    "LAX",
 		DepICAO:    "KLAX",
@@ -249,7 +249,7 @@ func TestEnrichRoute_SaveError(t *testing.T) {
 	routeStore := NewMockRouteStore(ctrl)
 	routeLookup := NewMockRouteLookup(ctrl)
 
-	route := &airlabs.FlightRoute{FlightICAO: "AAL2079", DepIATA: "LAX"}
+	route := &route.Info{FlightICAO: "AAL2079", DepIATA: "LAX"}
 
 	routeStore.EXPECT().
 		GetFlightRoute(gomock.Any(), "AAL2079").

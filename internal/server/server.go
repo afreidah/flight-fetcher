@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
+	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 )
 
@@ -41,7 +41,7 @@ type AircraftMetaReader interface {
 
 // RouteReader retrieves cached flight route information by callsign.
 type RouteReader interface {
-	GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error)
+	GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error)
 }
 
 // SquawkAlertReader retrieves recent emergency squawk alerts.
@@ -74,7 +74,7 @@ type Server struct {
 type flightDetail struct {
 	State    *opensky.StateVector `json:"state"`
 	Aircraft *hexdb.AircraftInfo  `json:"aircraft,omitempty"`
-	Route    *airlabs.FlightRoute `json:"route,omitempty"`
+	Route    *route.Info `json:"route,omitempty"`
 }
 
 // -------------------------------------------------------------------------

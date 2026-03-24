@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
 // -------------------------------------------------------------------------
@@ -32,7 +34,7 @@ type Client struct {
 
 // apiResponse wraps the AirLabs JSON response envelope.
 type apiResponse struct {
-	Response FlightRoute `json:"response"`
+	Response route.Info `json:"response"`
 }
 
 // -------------------------------------------------------------------------
@@ -50,7 +52,7 @@ func NewClient(apiKey string) *Client {
 
 // LookupRoute fetches route information for a flight by ICAO flight code
 // (callsign). Returns nil if the flight is not found.
-func (c *Client) LookupRoute(ctx context.Context, callsign string) (*FlightRoute, error) {
+func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info, error) {
 	callsign = strings.TrimSpace(callsign)
 	if callsign == "" {
 		return nil, nil

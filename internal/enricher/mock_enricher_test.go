@@ -13,8 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	airlabs "github.com/afreidah/flight-fetcher/internal/airlabs"
 	hexdb "github.com/afreidah/flight-fetcher/internal/hexdb"
+	route "github.com/afreidah/flight-fetcher/internal/route"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -135,10 +135,10 @@ func (m *MockRouteStore) EXPECT() *MockRouteStoreMockRecorder {
 }
 
 // GetFlightRoute mocks base method.
-func (m *MockRouteStore) GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error) {
+func (m *MockRouteStore) GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetFlightRoute", ctx, callsign)
-	ret0, _ := ret[0].(*airlabs.FlightRoute)
+	ret0, _ := ret[0].(*route.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -150,17 +150,17 @@ func (mr *MockRouteStoreMockRecorder) GetFlightRoute(ctx, callsign any) *gomock.
 }
 
 // SaveFlightRoute mocks base method.
-func (m *MockRouteStore) SaveFlightRoute(ctx context.Context, route *airlabs.FlightRoute) error {
+func (m *MockRouteStore) SaveFlightRoute(ctx context.Context, arg1 *route.Info) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveFlightRoute", ctx, route)
+	ret := m.ctrl.Call(m, "SaveFlightRoute", ctx, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SaveFlightRoute indicates an expected call of SaveFlightRoute.
-func (mr *MockRouteStoreMockRecorder) SaveFlightRoute(ctx, route any) *gomock.Call {
+func (mr *MockRouteStoreMockRecorder) SaveFlightRoute(ctx, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveFlightRoute", reflect.TypeOf((*MockRouteStore)(nil).SaveFlightRoute), ctx, route)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveFlightRoute", reflect.TypeOf((*MockRouteStore)(nil).SaveFlightRoute), ctx, arg1)
 }
 
 // MockRouteLookup is a mock of RouteLookup interface.
@@ -188,10 +188,10 @@ func (m *MockRouteLookup) EXPECT() *MockRouteLookupMockRecorder {
 }
 
 // LookupRoute mocks base method.
-func (m *MockRouteLookup) LookupRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error) {
+func (m *MockRouteLookup) LookupRoute(ctx context.Context, callsign string) (*route.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LookupRoute", ctx, callsign)
-	ret0, _ := ret[0].(*airlabs.FlightRoute)
+	ret0, _ := ret[0].(*route.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

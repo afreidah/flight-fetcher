@@ -19,7 +19,7 @@ import (
 
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/airlabs"
+	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
@@ -59,13 +59,13 @@ func (s *stubMetaReader) GetAircraftMeta(_ context.Context, _ string) (*hexdb.Ai
 
 // stubRouteReader is a minimal RouteReader for testing.
 type stubRouteReader struct {
-	route *airlabs.FlightRoute
+	info *route.Info
 	err   error
 }
 
 // GetFlightRoute returns the stubbed flight route.
-func (s *stubRouteReader) GetFlightRoute(_ context.Context, _ string) (*airlabs.FlightRoute, error) {
-	return s.route, s.err
+func (s *stubRouteReader) GetFlightRoute(_ context.Context, _ string) (*route.Info, error) {
+	return s.info, s.err
 }
 
 // stubAlertReader is a minimal SquawkAlertReader for testing.
@@ -191,8 +191,8 @@ func TestHandleGetFlight_WithMeta(t *testing.T) {
 // TestHandleGetFlight_WithRoute verifies that flight detail includes route information.
 func TestHandleGetFlight_WithRoute(t *testing.T) {
 	sv := &opensky.StateVector{ICAO24: "abc123", Callsign: "AAL2079"}
-	route := &airlabs.FlightRoute{FlightICAO: "AAL2079", DepIATA: "LAX", ArrIATA: "DFW"}
-	srv := New(&Options{Flights: &stubFlightLister{flight: sv}, Aircraft: &stubMetaReader{}, Routes: &stubRouteReader{route: route}, Version: "test", RefreshSec: 5})
+	ri := &route.Info{FlightICAO: "AAL2079", DepIATA: "LAX", ArrIATA: "DFW"}
+	srv := New(&Options{Flights: &stubFlightLister{flight: sv}, Aircraft: &stubMetaReader{}, Routes: &stubRouteReader{info: ri}, Version: "test", RefreshSec: 5})
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
 	w := httptest.NewRecorder()
 
@@ -394,8 +394,8 @@ func TestHandleGetAircraft_NotFound(t *testing.T) {
 
 // TestHandleGetRoute_Success verifies that route data is returned.
 func TestHandleGetRoute_Success(t *testing.T) {
-	route := &airlabs.FlightRoute{FlightICAO: "AAL2079", DepIATA: "LAX", ArrIATA: "DFW"}
-	srv := New(&Options{Flights: &stubFlightLister{}, Aircraft: &stubMetaReader{}, Routes: &stubRouteReader{route: route}, Version: "test", RefreshSec: 5})
+	ri := &route.Info{FlightICAO: "AAL2079", DepIATA: "LAX", ArrIATA: "DFW"}
+	srv := New(&Options{Flights: &stubFlightLister{}, Aircraft: &stubMetaReader{}, Routes: &stubRouteReader{info: ri}, Version: "test", RefreshSec: 5})
 	req := httptest.NewRequest(http.MethodGet, "/api/routes/AAL2079", nil)
 	w := httptest.NewRecorder()
 
@@ -404,7 +404,7 @@ func TestHandleGetRoute_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	var got airlabs.FlightRoute
+	var got route.Info
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
