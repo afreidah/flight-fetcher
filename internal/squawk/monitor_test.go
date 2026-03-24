@@ -64,8 +64,9 @@ func (s *stubEnricher) Enrich(_ context.Context, icao24 string) bool {
 }
 
 // EnrichRoute records the callsign.
-func (s *stubEnricher) EnrichRoute(_ context.Context, callsign string) {
+func (s *stubEnricher) EnrichRoute(_ context.Context, callsign string) bool {
 	s.routes = append(s.routes, callsign)
+	return true
 }
 
 // -------------------------------------------------------------------------

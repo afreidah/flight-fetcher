@@ -57,6 +57,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 		Times(1)
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any()).
+		Return(true).
 		Times(1)
 
 	p := New(source, cache, logger, enricher, center, radiusKm, time.Minute)
@@ -188,6 +189,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 		Times(1)
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), "AAL100").
+		Return(true).
 		Times(1)
 
 	p := New(source, cache, logger, enricher, center, 50.0, time.Minute)
