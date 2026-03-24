@@ -174,9 +174,6 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 				slog.String("icao24", icao24),
 				slog.String("error", err.Error()))
 		}
-		if route != nil && route.DepIATA == "" && route.ArrIATA == "" {
-			route = nil
-		}
 		detail.Route = route
 	}
 
@@ -232,7 +229,7 @@ func (s *Server) handleGetRoute(w http.ResponseWriter, r *http.Request) {
 			slog.String("error", err.Error()))
 		return
 	}
-	if route == nil || (route.DepIATA == "" && route.ArrIATA == "") {
+	if route == nil {
 		http.Error(w, "route not found", http.StatusNotFound)
 		return
 	}
