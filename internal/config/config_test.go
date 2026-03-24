@@ -12,6 +12,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -357,6 +358,168 @@ func TestRefreshSeconds_Custom(t *testing.T) {
 	cfg := &ServerConfig{Refresh: 10}
 	if got := cfg.RefreshSeconds(); got != 10 {
 		t.Errorf("RefreshSeconds() = %d, want 10", got)
+	}
+}
+
+// TestValidation_InvalidConfigs verifies that bad config values produce clear errors.
+func TestValidation_InvalidConfigs(t *testing.T) {
+	validBase := func(overrides string) string {
+		return `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+opensky {
+  id     = "test"
+  secret = "test"
+}
+poll_interval = "20s"
+redis {
+  addr = "localhost:6379"
+}
+postgres {
+  dsn = "postgres://localhost/test"
+}
+` + overrides
+	}
+
+	tests := []struct {
+		name    string
+		config  string
+		wantErr string
+	}{
+		{
+			name: "invalid latitude",
+			config: `
+location {
+  lat       = 100.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+opensky {
+  id     = "test"
+  secret = "test"
+}
+poll_interval = "20s"
+redis { addr = "localhost:6379" }
+postgres { dsn = "postgres://localhost/test" }
+`,
+			wantErr: "location.lat",
+		},
+		{
+			name: "invalid longitude",
+			config: `
+location {
+  lat       = 0.0
+  lon       = 200.0
+  radius_km = 50.0
+}
+opensky {
+  id     = "test"
+  secret = "test"
+}
+poll_interval = "20s"
+redis { addr = "localhost:6379" }
+postgres { dsn = "postgres://localhost/test" }
+`,
+			wantErr: "location.lon",
+		},
+		{
+			name: "zero radius",
+			config: `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 0.0
+}
+opensky {
+  id     = "test"
+  secret = "test"
+}
+poll_interval = "20s"
+redis { addr = "localhost:6379" }
+postgres { dsn = "postgres://localhost/test" }
+`,
+			wantErr: "radius_km",
+		},
+		{
+			name: "empty opensky id",
+			config: `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+opensky {
+  id     = ""
+  secret = "test"
+}
+poll_interval = "20s"
+redis { addr = "localhost:6379" }
+postgres { dsn = "postgres://localhost/test" }
+`,
+			wantErr: "opensky.id",
+		},
+		{
+			name: "empty redis addr",
+			config: `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+opensky {
+  id     = "test"
+  secret = "test"
+}
+poll_interval = "20s"
+redis { addr = "" }
+postgres { dsn = "postgres://localhost/test" }
+`,
+			wantErr: "redis.addr",
+		},
+		{
+			name: "empty postgres dsn",
+			config: `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+opensky {
+  id     = "test"
+  secret = "test"
+}
+poll_interval = "20s"
+redis { addr = "localhost:6379" }
+postgres { dsn = "" }
+`,
+			wantErr: "postgres.dsn",
+		},
+		{
+			name:    "empty airlabs key",
+			config:  validBase(`airlabs { api_key = "" }`),
+			wantErr: "airlabs.api_key",
+		},
+		{
+			name:    "invalid squawk monitor interval",
+			config:  validBase(`squawk_monitor { interval = "bad" }`),
+			wantErr: "squawk_monitor.interval",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTemp(t, tt.config)
+			_, err := Load(path)
+			if err == nil {
+				t.Fatal("Load() expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
 
