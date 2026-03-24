@@ -27,20 +27,41 @@
       border-radius: 8px;
       overflow: hidden;
     }
+    .col-headers {
+      display: flex;
+      padding: 0.25rem 0.75rem;
+      gap: 0;
+      font-size: 0.75rem;
+      color: #8e7a8a;
+      cursor: pointer;
+      user-select: none;
+    }
+    .col-headers span:hover { color: #6b4c5a; }
+    .col-headers .sort-active { color: #e8879a; font-weight: 600; }
+    .col-headers .col-icao { width: 75px; flex-shrink: 0; }
+    .col-headers .col-callsign { width: 80px; flex-shrink: 0; }
+    .col-headers .col-country { width: 100px; flex-shrink: 0; }
+    .col-headers .col-alt { width: 90px; flex-shrink: 0; }
+    .col-headers .col-spd { width: 80px; flex-shrink: 0; }
+    .col-headers .col-squawk { flex: 1; }
+
     .row-header {
       display: flex;
       align-items: center;
       padding: 0.5rem 0.75rem;
       cursor: pointer;
-      gap: 0.75rem;
+      gap: 0;
       font-size: 0.85rem;
       transition: background 0.15s;
     }
     .row-header:hover { background: #fdf0f2; }
     .row.selected .row-header { background: #fdf0f2; border-left: 3px solid #7ea8d4; }
-    .row-header .icao { font-weight: 600; color: #7ea8d4; min-width: 65px; }
-    .row-header .callsign { color: #4a4055; min-width: 70px; }
-    .row-header .field { color: #a08e9a; }
+    .row-header .icao { font-weight: 600; color: #7ea8d4; width: 75px; flex-shrink: 0; }
+    .row-header .callsign { color: #4a4055; width: 80px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row-header .col-country { color: #a08e9a; width: 100px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row-header .col-alt { color: #a08e9a; width: 90px; flex-shrink: 0; }
+    .row-header .col-spd { color: #a08e9a; width: 80px; flex-shrink: 0; }
+    .row-header .col-squawk { color: #a08e9a; flex: 1; }
     .row-header .squawk-emergency { color: #d96b7c; font-weight: 600; }
 
     .squawk-row { border-color: #f0a8b0; }
@@ -69,6 +90,14 @@
   <div class="main">
     <div class="left">
       <div id="squawk-section"></div>
+      <div class="col-headers" id="col-headers">
+        <span class="col-icao sort-active" onclick="setSort('icao24')">ICAO24</span>
+        <span class="col-callsign" onclick="setSort('callsign')">Callsign</span>
+        <span class="col-country" onclick="setSort('country')">Country</span>
+        <span class="col-alt" onclick="setSort('alt')">Altitude</span>
+        <span class="col-spd" onclick="setSort('spd')">Speed</span>
+        <span class="col-squawk" onclick="setSort('squawk')">Squawk</span>
+      </div>
       <div id="flights"></div>
     </div>
     <div class="right">
@@ -93,13 +122,55 @@
       }).addTo(map);
     }
 
+    var sortField = "icao24";
+    var sortDir = 1;
+
+    function setSort(field) {
+      if (sortField === field) {
+        sortDir *= -1;
+      } else {
+        sortField = field;
+        sortDir = 1;
+      }
+      // Update header highlights
+      document.querySelectorAll(".col-headers span").forEach(function(s) {
+        s.classList.remove("sort-active");
+      });
+      var cls = {"icao24":"col-icao","callsign":"col-callsign","country":"col-country","alt":"col-alt","spd":"col-spd","squawk":"col-squawk"};
+      var active = document.querySelector(".col-headers ." + cls[field]);
+      if (active) active.classList.add("sort-active");
+      // Re-sort DOM without refetching
+      var el = document.getElementById("flights");
+      var sorted = sortFlights(cachedFlights);
+      sorted.forEach(function(f) {
+        var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
+        if (row) el.appendChild(row);
+      });
+    }
+
+    function sortFlights(flights) {
+      return flights.slice().sort(function(a, b) {
+        var va, vb;
+        switch (sortField) {
+          case "icao24": va = a.icao24; vb = b.icao24; break;
+          case "callsign": va = a.callsign.trim(); vb = b.callsign.trim(); break;
+          case "country": va = a.origin_country || ""; vb = b.origin_country || ""; break;
+          case "alt": va = a.baro_altitude || 0; vb = b.baro_altitude || 0; return (va - vb) * sortDir;
+          case "spd": va = a.velocity || 0; vb = b.velocity || 0; return (va - vb) * sortDir;
+          case "squawk": va = a.squawk || ""; vb = b.squawk || ""; break;
+          default: va = a.icao24; vb = b.icao24;
+        }
+        return va < vb ? -sortDir : va > vb ? sortDir : 0;
+      });
+    }
+
     function buildHeader(f) {
       return '<span class="icao">' + esc(f.icao24) + '</span>' +
         '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
-        '<span class="field">' + esc(f.origin_country || "-") + '</span>' +
-        '<span class="field">Alt: ' + fmtFt(f.baro_altitude) + '</span>' +
-        '<span class="field">Spd: ' + fmtMph(f.velocity) + '</span>' +
-        (f.squawk ? '<span class="field">' + squawkLabel(f.squawk) + '</span>' : '');
+        '<span class="col-country">' + esc(f.origin_country || "-") + '</span>' +
+        '<span class="col-alt">' + fmtFt(f.baro_altitude) + '</span>' +
+        '<span class="col-spd">' + fmtMph(f.velocity) + '</span>' +
+        '<span class="col-squawk">' + (f.squawk ? squawkLabel(f.squawk) : '') + '</span>';
     }
 
     function planeIcon(heading, isSelected) {
@@ -155,7 +226,7 @@
         document.getElementById("status").textContent = flights.length + " aircraft in range";
 
         var el = document.getElementById("flights");
-        flights.sort(function(a, b) { return a.icao24.localeCompare(b.icao24); });
+        flights = sortFlights(flights);
 
         var current = {};
         flights.forEach(function(f) { current[f.icao24] = f; });
