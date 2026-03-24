@@ -21,6 +21,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/config"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
+	"github.com/afreidah/flight-fetcher/internal/flightaware"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
@@ -71,14 +72,26 @@ func main() {
 	defer pgStore.Close()
 
 	var routeLookup enricher.RouteLookup
+	var routeFallback enricher.RouteLookup
 	var routeStore enricher.RouteStore
 	if cfg.AirLabs != nil && cfg.AirLabs.APIKey != "" {
 		routeLookup = airlabs.NewClient(cfg.AirLabs.APIKey)
 		routeStore = pgStore
 		slog.InfoContext(ctx, "airlabs route enrichment enabled")
 	}
+	if cfg.FlightAware != nil && cfg.FlightAware.APIKey != "" {
+		fa := flightaware.NewClient(cfg.FlightAware.APIKey)
+		if routeLookup != nil {
+			routeFallback = fa
+			slog.InfoContext(ctx, "flightaware route fallback enabled")
+		} else {
+			routeLookup = fa
+			routeStore = pgStore
+			slog.InfoContext(ctx, "flightaware route enrichment enabled (primary)")
+		}
+	}
 
-	enr := enricher.New(hexdbClient, pgStore, routeLookup, routeStore)
+	enr := enricher.New(hexdbClient, pgStore, routeLookup, routeFallback, routeStore)
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
 	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval)
 
