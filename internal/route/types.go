@@ -1,21 +1,20 @@
 // -------------------------------------------------------------------------------
-// AirLabs - Response Types
+// Route - Flight Route Domain Types
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// Defines the response types for the AirLabs flight data API. Lookups are
-// keyed by ICAO flight code (callsign) and return route, airport, and aircraft
-// information.
+// Shared domain type for flight route information used across API clients
+// (AirLabs, FlightAware), the enricher, store, and server.
 // -------------------------------------------------------------------------------
 
-package airlabs
+package route
 
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
 
-// FlightRoute contains departure and arrival airport information for a flight.
-type FlightRoute struct {
+// Info contains departure and arrival airport information for a flight.
+type Info struct {
 	FlightICAO string `json:"flight_icao"`
 	FlightIATA string `json:"flight_iata"`
 	DepIATA    string `json:"dep_iata"`

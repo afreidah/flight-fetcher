@@ -18,8 +18,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
+	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/store/migrations"
 	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
@@ -123,7 +123,7 @@ func (p *PostgresStore) LogSighting(ctx context.Context, icao24 string, lat, lon
 }
 
 // SaveFlightRoute caches flight route information, upserting by callsign.
-func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *airlabs.FlightRoute) error {
+func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *route.Info) error {
 	return p.queries.UpsertFlightRoute(ctx, db.UpsertFlightRouteParams{
 		Callsign: route.FlightICAO,
 		DepIata:  route.DepIATA,
@@ -137,7 +137,7 @@ func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *airlabs.Flig
 
 // GetFlightRoute retrieves cached route information by callsign. Returns nil
 // if the route has not been looked up yet or the cached entry is stale.
-func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error) {
+func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error) {
 	row, err := p.queries.GetFlightRoute(ctx, db.GetFlightRouteParams{
 		Callsign: callsign,
 		CachedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.routeTTL), Valid: true},
@@ -148,7 +148,7 @@ func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*a
 	if err != nil {
 		return nil, err
 	}
-	return &airlabs.FlightRoute{
+	return &route.Info{
 		FlightICAO: row.Callsign,
 		DepIATA:    row.DepIata,
 		DepICAO:    row.DepIcao,

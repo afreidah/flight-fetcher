@@ -15,8 +15,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
+	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
 //go:generate mockgen -destination mock_enricher_test.go -package enricher github.com/afreidah/flight-fetcher/internal/enricher AircraftStore,AircraftLookup,RouteStore,RouteLookup
@@ -38,13 +38,13 @@ type AircraftLookup interface {
 
 // RouteStore reads and writes cached flight route information.
 type RouteStore interface {
-	GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error)
-	SaveFlightRoute(ctx context.Context, route *airlabs.FlightRoute) error
+	GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error)
+	SaveFlightRoute(ctx context.Context, route *route.Info) error
 }
 
 // RouteLookup fetches flight route information from an external source.
 type RouteLookup interface {
-	LookupRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error)
+	LookupRoute(ctx context.Context, callsign string) (*route.Info, error)
 }
 
 // -------------------------------------------------------------------------
