@@ -22,10 +22,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
-
-	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/afreidah/flight-fetcher/internal/squawk"
 )
 
 // -------------------------------------------------------------------------
@@ -73,12 +70,12 @@ func (s *stubRouteReader) GetFlightRoute(_ context.Context, _ string) (*airlabs.
 
 // stubAlertReader is a minimal SquawkAlertReader for testing.
 type stubAlertReader struct {
-	alerts []db.SquawkAlert
+	alerts []squawk.Alert
 	err    error
 }
 
 // GetRecentSquawkAlerts returns the stubbed alerts.
-func (s *stubAlertReader) GetRecentSquawkAlerts(_ context.Context, _ time.Duration) ([]db.SquawkAlert, error) {
+func (s *stubAlertReader) GetRecentSquawkAlerts(_ context.Context, _ time.Duration) ([]squawk.Alert, error) {
 	return s.alerts, s.err
 }
 
@@ -348,9 +345,9 @@ func TestHandleGetFlight_RouteError(t *testing.T) {
 
 // TestHandleSquawkAlerts_Success verifies that squawk alerts are returned as JSON.
 func TestHandleSquawkAlerts_Success(t *testing.T) {
-	alerts := []db.SquawkAlert{
-		{ID: 1, Icao24: "a1", Callsign: "UAL123", Squawk: "7700", Lat: 34.0, Lon: -118.0,
-			SeenAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}},
+	alerts := []squawk.Alert{
+		{ID: 1, ICAO24: "a1", Callsign: "UAL123", Squawk: "7700", Lat: 34.0, Lon: -118.0,
+			SeenAt: time.Now().UTC()},
 	}
 	srv := New(&stubFlightLister{}, &stubMetaReader{}, nil, &stubAlertReader{alerts: alerts}, "test", 5)
 	req := httptest.NewRequest(http.MethodGet, "/api/squawk-alerts", nil)
@@ -361,7 +358,7 @@ func TestHandleSquawkAlerts_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	var got []db.SquawkAlert
+	var got []squawk.Alert
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf("decode error: %v", err)
 	}

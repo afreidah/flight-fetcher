@@ -19,6 +19,7 @@ import (
 
 	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
+	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/store/migrations"
 	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
 
@@ -161,11 +162,27 @@ func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign,
 }
 
 // GetRecentSquawkAlerts returns squawk alerts from the last given duration.
-func (p *PostgresStore) GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]db.SquawkAlert, error) {
-	return p.queries.GetRecentSquawkAlerts(ctx, pgtype.Timestamptz{
+func (p *PostgresStore) GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error) {
+	rows, err := p.queries.GetRecentSquawkAlerts(ctx, pgtype.Timestamptz{
 		Time:  time.Now().UTC().Add(-since),
 		Valid: true,
 	})
+	if err != nil {
+		return nil, err
+	}
+	alerts := make([]squawk.Alert, len(rows))
+	for i, r := range rows {
+		alerts[i] = squawk.Alert{
+			ID:       r.ID,
+			ICAO24:   r.Icao24,
+			Callsign: r.Callsign,
+			Squawk:   r.Squawk,
+			Lat:      r.Lat,
+			Lon:      r.Lon,
+			SeenAt:   r.SeenAt.Time,
+		}
+	}
+	return alerts, nil
 }
 
 // DeleteOldSightings removes sightings older than the given duration.
