@@ -8,14 +8,20 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #efe3e5; color: #4a4055; }
-    h1 { padding: 1rem; font-size: 1.25rem; background: #f9e4e4; border-bottom: 1px solid #f0c6c6; color: #6b4c5a; margin-bottom: 1rem; }
-    h1 .version { font-size: 0.8rem; color: #b89aa6; font-weight: 400; margin-left: 0.75rem; }
-    h2 { font-size: 1rem; padding: 0.75rem 1rem 0.5rem; color: #8e7a8a; }
-    #status { padding: 0.5rem 1rem; color: #a08e9a; font-size: 0.85rem; }
+    html, body { height: 100%; overflow: hidden; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #efe3e5; color: #4a4055; display: flex; flex-direction: column; }
+
+    header { padding: 0.75rem 1rem; background: #f9e4e4; border-bottom: 1px solid #f0c6c6; color: #6b4c5a; font-size: 1.25rem; font-weight: 700; flex-shrink: 0; }
+    header .version { font-size: 0.8rem; color: #b89aa6; font-weight: 400; margin-left: 0.75rem; }
+    header .status { float: right; font-size: 0.85rem; color: #a08e9a; font-weight: 400; }
+
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* Left pane: flight list */
+    .left { width: 40%; overflow-y: auto; padding: 0.5rem; flex-shrink: 0; }
 
     .row {
-      margin: 0 0.5rem 3px;
+      margin-bottom: 3px;
       background: #e8eef6;
       border: 1px solid #f0d4d8;
       border-radius: 8px;
@@ -26,45 +32,66 @@
       align-items: center;
       padding: 0.5rem 0.75rem;
       cursor: pointer;
-      gap: 1rem;
-      font-size: 0.9rem;
+      gap: 0.75rem;
+      font-size: 0.85rem;
       transition: background 0.15s;
     }
     .row-header:hover { background: #fdf0f2; }
-    .row.expanded .row-header { border-bottom: 1px solid #f0d4d8; background: #fdf0f2; }
-    .row-header .icao { font-weight: 600; color: #7ea8d4; min-width: 70px; }
-    .row-header .callsign { color: #4a4055; min-width: 80px; }
+    .row.selected .row-header { background: #fdf0f2; border-left: 3px solid #7ea8d4; }
+    .row-header .icao { font-weight: 600; color: #7ea8d4; min-width: 65px; }
+    .row-header .callsign { color: #4a4055; min-width: 70px; }
     .row-header .field { color: #a08e9a; }
     .row-header .squawk-emergency { color: #d96b7c; font-weight: 600; }
-
-    .row-detail {
-      display: none;
-      padding: 0.75rem;
-      background: #fdf0f2;
-    }
-    .row.expanded .row-detail { display: flex; gap: 1rem; }
-    .row-detail .detail-data { flex: 1; min-width: 0; }
-    .row-detail .detail-map { flex: 1; min-height: 200px; border-radius: 6px; overflow: hidden; }
-    .row-detail table { width: 100%; border-collapse: collapse; }
-    .row-detail td { padding: 0.3rem 0.75rem; }
-    .row-detail td:first-child { color: #a08e9a; width: 160px; }
-    .row-detail .section { color: #e8879a; font-weight: 600; padding-top: 0.5rem; }
 
     .squawk-row { border-color: #f0a8b0; }
     .squawk-row .row-header { color: #6b4c5a; }
     .squawk-row .icao { color: #d96b7c; }
+
+    h2.section-title { font-size: 0.9rem; padding: 0.5rem 0.5rem 0.25rem; color: #8e7a8a; }
+
+    /* Right pane: map + detail */
+    .right { flex: 1; overflow-y: auto; border-left: 1px solid #f0c6c6; }
+    #map { height: 450px; }
+    #detail { padding: 0.75rem; }
+    #detail:empty { display: none; }
+    #detail table { width: 100%; border-collapse: collapse; }
+    #detail td { padding: 0.3rem 0.75rem; font-size: 0.85rem; }
+    #detail td:first-child { color: #a08e9a; width: 150px; }
+    #detail .section { color: #e8879a; font-weight: 600; padding-top: 0.5rem; }
+    #detail .none { color: #a08e9a; font-style: italic; padding: 1rem; text-align: center; }
   </style>
 </head>
 <body>
-  <h1>Flight Fetcher<span class="version">{{VERSION}}</span></h1>
-  <div id="squawk-section"></div>
-  <div id="status">Loading...</div>
-  <div id="flights"></div>
+  <header>
+    Flight Fetcher<span class="version">{{VERSION}}</span>
+    <span class="status" id="status">Loading...</span>
+  </header>
+  <div class="main">
+    <div class="left">
+      <div id="squawk-section"></div>
+      <div id="flights"></div>
+    </div>
+    <div class="right">
+      <div id="map"></div>
+      <div id="detail"></div>
+    </div>
+  </div>
 
   <script>
-    var expanded = null;
+    var selected = null;
     var cachedFlights = [];
     var flightMap = {};
+    var map = null;
+    var markers = {};
+    var selectedMarker = null;
+
+    // Initialize the persistent map
+    function initMap() {
+      map = L.map("map").setView([34.0928, -118.3287], 9);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap"
+      }).addTo(map);
+    }
 
     function buildHeader(f) {
       return '<span class="icao">' + esc(f.icao24) + '</span>' +
@@ -72,8 +99,46 @@
         '<span class="field">' + esc(f.origin_country || "-") + '</span>' +
         '<span class="field">Alt: ' + fmtFt(f.baro_altitude) + '</span>' +
         '<span class="field">Spd: ' + fmtMph(f.velocity) + '</span>' +
-        '<span class="field">Hdg: ' + fmt(f.heading, "deg") + '</span>' +
         (f.squawk ? '<span class="field">' + squawkLabel(f.squawk) + '</span>' : '');
+    }
+
+    function planeIcon(heading, isSelected) {
+      var color = isSelected ? "#d96b7c" : "#7ea8d4";
+      var size = isSelected ? 24 : 18;
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" ' +
+        'style="transform:rotate(' + (heading || 0) + 'deg)">' +
+        '<path d="M12 2L8 10H3l2 4h5l-2 6h2l4-4 4 4h2l-2-6h5l2-4h-5L12 2z" fill="' + color + '"/></svg>';
+      return L.divIcon({
+        html: svg,
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2],
+        className: ""
+      });
+    }
+
+    // Update markers on the map for all flights
+    function updateMarkers(flights) {
+      var current = {};
+      flights.forEach(function(f) {
+        current[f.icao24] = true;
+        var pos = [f.latitude, f.longitude];
+        var isSel = f.icao24 === selected;
+        if (markers[f.icao24]) {
+          markers[f.icao24].setLatLng(pos);
+          markers[f.icao24].setIcon(planeIcon(f.heading, isSel));
+        } else {
+          markers[f.icao24] = L.marker(pos, { icon: planeIcon(f.heading, isSel) }).addTo(map);
+          markers[f.icao24].on("click", function() { selectFlight(f.icao24); });
+        }
+        markers[f.icao24].bindTooltip(esc(f.callsign.trim() || f.icao24), { direction: "top", offset: [0, -10] });
+      });
+      // Remove markers for departed aircraft
+      Object.keys(markers).forEach(function(icao) {
+        if (!current[icao]) {
+          map.removeLayer(markers[icao]);
+          delete markers[icao];
+        }
+      });
     }
 
     async function loadFlights() {
@@ -92,7 +157,6 @@
         var el = document.getElementById("flights");
         flights.sort(function(a, b) { return a.icao24.localeCompare(b.icao24); });
 
-        // Build set of current ICAO24s
         var current = {};
         flights.forEach(function(f) { current[f.icao24] = f; });
 
@@ -102,71 +166,72 @@
           if (!current[row.dataset.icao]) row.remove();
         });
 
-        // Update existing rows or add new ones
+        // Update existing or add new
         flights.forEach(function(f) {
           var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
           if (row) {
-            // Update header content in place
             var header = row.querySelector(".row-header");
             if (header) header.innerHTML = buildHeader(f);
           } else {
-            // New aircraft - create row
             row = document.createElement("div");
             row.className = "row";
             row.dataset.icao = f.icao24;
             row.innerHTML =
-              '<div class="row-header" onclick="toggleFlight(\'' + esc(f.icao24) + '\')">' +
+              '<div class="row-header" onclick="selectFlight(\'' + esc(f.icao24) + '\')">' +
                 buildHeader(f) +
-              '</div>' +
-              '<div class="row-detail" id="detail-' + esc(f.icao24) + '"></div>';
+              '</div>';
             el.appendChild(row);
           }
-          // Preserve expanded state
-          if (expanded === f.icao24) {
-            row.classList.add("expanded");
+          if (selected === f.icao24) {
+            row.classList.add("selected");
           } else {
-            row.classList.remove("expanded");
+            row.classList.remove("selected");
           }
         });
 
-        // Re-sort DOM to match sorted order
+        // Re-sort
         flights.forEach(function(f) {
           var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
           if (row) el.appendChild(row);
         });
 
-        if (expanded && !expanded.startsWith("squawk-")) {
-          var detail = document.getElementById("detail-" + expanded);
-          if (detail && detail.innerHTML === "") loadDetail(expanded);
-        }
+        // Update map markers
+        updateMarkers(flights);
       } catch (e) {
         document.getElementById("status").textContent = "Error loading flights";
       }
     }
 
-    async function toggleFlight(icao24) {
+    function selectFlight(icao24) {
       var el = document.getElementById("flights");
-      // Collapse previous
-      if (expanded) {
-        var prev = el.querySelector('.row[data-icao="' + expanded + '"]');
-        if (prev) prev.classList.remove("expanded");
-        if (activeMap) { activeMap.remove(); activeMap = null; }
+      // Deselect previous
+      if (selected) {
+        var prev = el.querySelector('.row[data-icao="' + selected + '"]');
+        if (prev) prev.classList.remove("selected");
+        var prevFlight = flightMap[selected];
+        if (markers[selected] && prevFlight) {
+          markers[selected].setIcon(planeIcon(prevFlight.heading, false));
+        }
       }
-      if (expanded === icao24) { expanded = null; return; }
-      // Expand new
-      expanded = icao24;
+      if (selected === icao24) {
+        selected = null;
+        document.getElementById("detail").innerHTML = "";
+        return;
+      }
+      selected = icao24;
       var row = el.querySelector('.row[data-icao="' + icao24 + '"]');
-      if (row) {
-        row.classList.add("expanded");
-        loadDetail(icao24);
+      if (row) row.classList.add("selected");
+      // Highlight marker and pan
+      var f = flightMap[icao24];
+      if (markers[icao24] && f) {
+        markers[icao24].setIcon(planeIcon(f.heading, true));
+        map.panTo(markers[icao24].getLatLng());
       }
+      loadDetail(icao24);
     }
 
-    var activeMap = null;
-
     async function loadDetail(icao24) {
-      var el = document.getElementById("detail-" + icao24);
-      if (!el) return;
+      var el = document.getElementById("detail");
       try {
         var resp = await fetch("/api/flights/" + encodeURIComponent(icao24));
         var data;
@@ -175,29 +240,18 @@
         } else if (flightMap[icao24]) {
           data = { state: flightMap[icao24] };
         } else {
+          el.innerHTML = '<div class="none">No detail available</div>';
           return;
         }
-        var mapId = "map-" + icao24;
-        el.innerHTML = buildDetail(data, mapId);
-        if (activeMap) { activeMap.remove(); activeMap = null; }
-        var mapEl = document.getElementById(mapId);
-        if (mapEl && data.state.latitude && data.state.longitude) {
-          var lat = data.state.latitude;
-          var lon = data.state.longitude;
-          activeMap = L.map(mapId).setView([lat, lon], 10);
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap"
-          }).addTo(activeMap);
-          L.marker([lat, lon]).addTo(activeMap);
-        }
+        el.innerHTML = buildDetail(data);
       } catch (e) {
-        el.innerHTML = "<em>Failed to load details</em>";
+        el.innerHTML = '<div class="none">Failed to load details</div>';
       }
     }
 
-    function buildDetail(data, mapId) {
+    function buildDetail(data) {
       var s = data.state;
-      var t = '<div class="detail-data"><table>';
+      var t = '<table>';
       t += section("Flight State");
       t += row("ICAO24", s.icao24);
       t += row("Callsign", s.callsign.trim() || "-");
@@ -224,10 +278,7 @@
         t += row("Type", a.Type || "-");
         t += row("Operator", a.OperatorFlagCode || "-");
       }
-      t += '</table></div>';
-      if (s.latitude && s.longitude) {
-        t += '<div class="detail-map" id="' + mapId + '"></div>';
-      }
+      t += '</table>';
       return t;
     }
 
@@ -239,45 +290,48 @@
         var resp = await fetch("/api/squawk-alerts");
         cachedAlerts = await resp.json();
         if (!cachedAlerts || cachedAlerts.length === 0) { el.innerHTML = ""; return; }
-        var html = '<h2>Global Emergency Squawk Alerts (last 24h)</h2>';
+        var html = '<h2 class="section-title">Global Emergency Squawk Alerts (last 24h)</h2>';
         cachedAlerts.forEach(function(a, i) {
           var id = "squawk-" + i;
           var label = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"}[a.Squawk] || a.Squawk;
           var time = new Date(a.SeenAt).toLocaleString();
-          var isExpanded = expanded === id;
-          html += '<div class="row squawk-row' + (isExpanded ? ' expanded' : '') + '">' +
-            '<div class="row-header" onclick="toggleSquawk(\'' + id + '\')">' +
+          html += '<div class="row squawk-row' + (selected === id ? ' selected' : '') + '">' +
+            '<div class="row-header" onclick="selectSquawk(\'' + id + '\')">' +
               '<span class="icao squawk-emergency">' + esc(a.Squawk) + ' ' + esc(label) + '</span>' +
               '<span class="callsign">' + esc(a.Icao24) + '</span>' +
               (a.Callsign ? '<span class="field">' + esc(a.Callsign) + '</span>' : '') +
               '<span class="field">' + esc(time) + '</span>' +
-              '<span class="field">Lat: ' + a.Lat.toFixed(2) + '</span>' +
-              '<span class="field">Lon: ' + a.Lon.toFixed(2) + '</span>' +
             '</div>' +
-            '<div class="row-detail" id="detail-' + id + '"></div>' +
           '</div>';
         });
         el.innerHTML = html;
-        if (expanded && expanded.startsWith("squawk-")) {
-          var idx = parseInt(expanded.split("-")[1]);
-          if (cachedAlerts[idx]) loadSquawkDetail(expanded, cachedAlerts[idx]);
-        }
       } catch (e) {
         el.innerHTML = "";
       }
     }
 
-    function toggleSquawk(id) {
-      if (expanded === id) { expanded = null; loadSquawkAlerts(); return; }
-      expanded = id;
+    function selectSquawk(id) {
+      if (selected === id) {
+        selected = null;
+        document.getElementById("detail").innerHTML = "";
+        loadSquawkAlerts();
+        return;
+      }
+      // Deselect any flight
+      if (selected) {
+        var prev = document.querySelector('.row.selected');
+        if (prev) prev.classList.remove("selected");
+        if (markers[selected]) markers[selected].setStyle({ color: "#7ea8d4", fillColor: "#7ea8d4", radius: 5 });
+      }
+      selected = id;
       loadSquawkAlerts();
+      var idx = parseInt(id.split("-")[1]);
+      if (cachedAlerts && cachedAlerts[idx]) loadSquawkDetail(cachedAlerts[idx]);
     }
 
-    async function loadSquawkDetail(id, alert) {
-      var el = document.getElementById("detail-" + id);
-      if (!el) return;
-      var mapId = "map-" + id;
-      var t = '<div class="detail-data"><table>';
+    async function loadSquawkDetail(alert) {
+      var el = document.getElementById("detail");
+      var t = '<table>';
       t += section("Alert Details");
       t += row("ICAO24", alert.Icao24);
       t += row("Callsign", alert.Callsign || "-");
@@ -307,19 +361,12 @@
           }
         } catch (e) {}
       }
-      t += '</table></div>';
-      if (alert.Lat && alert.Lon) {
-        t += '<div class="detail-map" id="' + mapId + '"></div>';
-      }
+      t += '</table>';
       el.innerHTML = t;
-      if (activeMap) { activeMap.remove(); activeMap = null; }
-      var mapEl = document.getElementById(mapId);
-      if (mapEl && alert.Lat && alert.Lon) {
-        activeMap = L.map(mapId).setView([alert.Lat, alert.Lon], 6);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "&copy; OpenStreetMap"
-        }).addTo(activeMap);
-        L.marker([alert.Lat, alert.Lon]).addTo(activeMap);
+      // Pan map to alert location
+      if (alert.Lat && alert.Lon) {
+        map.panTo([alert.Lat, alert.Lon]);
+        map.setZoom(6);
       }
     }
 
@@ -354,6 +401,7 @@
       return d.innerHTML;
     }
 
+    initMap();
     var refreshSec = {{REFRESH}};
     loadFlights();
     loadSquawkAlerts();
