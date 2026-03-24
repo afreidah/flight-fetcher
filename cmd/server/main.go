@@ -91,9 +91,15 @@ func main() {
 		}
 	}
 
+	enrichRefresh, err := cfg.EnrichmentRefreshDuration()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to parse enrichment_refresh", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	enr := enricher.New(hexdbClient, pgStore, routeLookup, routeFallback, routeStore)
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
-	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval)
+	p := poller.New(oskyClient, redisStore, pgStore, enr, center, cfg.Location.RadiusKm, pollInterval, enrichRefresh)
 
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
