@@ -221,9 +221,6 @@ func TestEnrichRoute_NotFound(t *testing.T) {
 	routeLookup.EXPECT().
 		LookupRoute(gomock.Any(), "AAL2079").
 		Return(nil, nil)
-	routeStore.EXPECT().
-		SaveFlightRoute(gomock.Any(), &airlabs.FlightRoute{FlightICAO: "AAL2079"}).
-		Return(nil)
 
 	enr := New(nil, nil, routeLookup, routeStore)
 	enr.EnrichRoute(context.Background(), "AAL2079")

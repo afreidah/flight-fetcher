@@ -488,16 +488,3 @@ func TestHandleGetAircraft_Sentinel(t *testing.T) {
 	}
 }
 
-// TestHandleGetRoute_Sentinel verifies that a sentinel route (empty fields) returns 404.
-func TestHandleGetRoute_Sentinel(t *testing.T) {
-	sentinel := &airlabs.FlightRoute{FlightICAO: "N12345"}
-	srv := New(&stubFlightLister{}, &stubMetaReader{}, &stubRouteReader{route: sentinel}, nil, "test", 5)
-	req := httptest.NewRequest(http.MethodGet, "/api/routes/N12345", nil)
-	w := httptest.NewRecorder()
-
-	srv.mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d (sentinel should be treated as not found)", w.Code, http.StatusNotFound)
-	}
-}

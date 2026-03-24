@@ -144,13 +144,6 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) {
 	if route == nil {
 		slog.DebugContext(ctx, "no route data found",
 			slog.String("callsign", callsign))
-		// Cache a sentinel so we don't look this up again
-		sentinel := &airlabs.FlightRoute{FlightICAO: callsign}
-		if err := e.routeStore.SaveFlightRoute(ctx, sentinel); err != nil {
-			slog.WarnContext(ctx, "failed to save route sentinel",
-				slog.String("callsign", callsign),
-				slog.String("error", err.Error()))
-		}
 		return
 	}
 
