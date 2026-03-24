@@ -13,6 +13,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -91,7 +92,7 @@ func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *hexdb.Aircra
 // if the aircraft has not been enriched yet.
 func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error) {
 	row, err := p.queries.GetAircraftMeta(ctx, icao24)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -141,7 +142,7 @@ func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*a
 		Callsign: callsign,
 		CachedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.routeTTL), Valid: true},
 	})
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
