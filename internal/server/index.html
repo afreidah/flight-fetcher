@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Flight Fetcher</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; background: #efe3e5; color: #4a4055; }
@@ -40,7 +42,9 @@
       padding: 0.75rem;
       background: #fdf0f2;
     }
-    .row.expanded .row-detail { display: block; }
+    .row.expanded .row-detail { display: flex; gap: 1rem; }
+    .row-detail .detail-data { flex: 1; min-width: 0; }
+    .row-detail .detail-map { flex: 1; min-height: 200px; border-radius: 6px; overflow: hidden; }
     .row-detail table { width: 100%; border-collapse: collapse; }
     .row-detail td { padding: 0.3rem 0.75rem; }
     .row-detail td:first-child { color: #a08e9a; width: 160px; }
@@ -96,6 +100,8 @@
       loadFlights();
     }
 
+    var activeMap = null;
+
     async function loadDetail(icao24) {
       var el = document.getElementById("detail-" + icao24);
       if (!el) return;
@@ -103,15 +109,27 @@
         var resp = await fetch("/api/flights/" + encodeURIComponent(icao24));
         if (!resp.ok) return;
         var data = await resp.json();
-        el.innerHTML = buildDetail(data);
+        var mapId = "map-" + icao24;
+        el.innerHTML = buildDetail(data, mapId);
+        if (activeMap) { activeMap.remove(); activeMap = null; }
+        var mapEl = document.getElementById(mapId);
+        if (mapEl && data.state.latitude && data.state.longitude) {
+          var lat = data.state.latitude;
+          var lon = data.state.longitude;
+          activeMap = L.map(mapId).setView([lat, lon], 10);
+          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "&copy; OpenStreetMap"
+          }).addTo(activeMap);
+          L.marker([lat, lon]).addTo(activeMap);
+        }
       } catch (e) {
         el.innerHTML = "<em>Failed to load details</em>";
       }
     }
 
-    function buildDetail(data) {
+    function buildDetail(data, mapId) {
       var s = data.state;
-      var t = '<table>';
+      var t = '<div class="detail-data"><table>';
       t += section("Flight State");
       t += row("ICAO24", s.icao24);
       t += row("Callsign", s.callsign.trim() || "-");
@@ -138,7 +156,10 @@
         t += row("Type", a.Type || "-");
         t += row("Operator", a.OperatorFlagCode || "-");
       }
-      t += '</table>';
+      t += '</table></div>';
+      if (s.latitude && s.longitude) {
+        t += '<div class="detail-map" id="' + mapId + '"></div>';
+      }
       return t;
     }
 
@@ -187,7 +208,8 @@
     async function loadSquawkDetail(id, alert) {
       var el = document.getElementById("detail-" + id);
       if (!el) return;
-      var t = '<table>';
+      var mapId = "map-" + id;
+      var t = '<div class="detail-data"><table>';
       t += section("Alert Details");
       t += row("ICAO24", alert.Icao24);
       t += row("Callsign", alert.Callsign || "-");
@@ -217,8 +239,20 @@
           }
         } catch (e) {}
       }
-      t += '</table>';
+      t += '</table></div>';
+      if (alert.Lat && alert.Lon) {
+        t += '<div class="detail-map" id="' + mapId + '"></div>';
+      }
       el.innerHTML = t;
+      if (activeMap) { activeMap.remove(); activeMap = null; }
+      var mapEl = document.getElementById(mapId);
+      if (mapEl && alert.Lat && alert.Lon) {
+        activeMap = L.map(mapId).setView([alert.Lat, alert.Lon], 6);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap"
+        }).addTo(activeMap);
+        L.marker([alert.Lat, alert.Lon]).addTo(activeMap);
+      }
     }
 
     function row(label, val) {
