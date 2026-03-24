@@ -52,6 +52,7 @@ type Client struct {
 	backoffUtil time.Time
 	backoff     time.Duration
 
+	tokenMu     sync.Mutex
 	token       string
 	tokenExpiry time.Time
 }
@@ -148,14 +149,16 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 // -------------------------------------------------------------------------
 
 // getToken returns a cached OAuth2 access token, refreshing it if expired.
+// Uses a dedicated mutex so only one goroutine refreshes at a time while
+// the backoff mutex remains unblocked.
 func (c *Client) getToken(ctx context.Context) (string, error) {
-	c.mu.Lock()
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+
+	// Re-check under lock - another goroutine may have refreshed while we waited
 	if c.token != "" && time.Now().Before(c.tokenExpiry) {
-		token := c.token
-		c.mu.Unlock()
-		return token, nil
+		return c.token, nil
 	}
-	c.mu.Unlock()
 
 	data := url.Values{
 		"grant_type":    {"client_credentials"},
@@ -185,11 +188,8 @@ func (c *Client) getToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("decoding token response: %w", err)
 	}
 
-	c.mu.Lock()
 	c.token = tr.AccessToken
-	// Refresh 30s before actual expiry to avoid edge cases
 	c.tokenExpiry = time.Now().Add(time.Duration(tr.ExpiresIn)*time.Second - 30*time.Second)
-	c.mu.Unlock()
 
 	slog.InfoContext(ctx, "oauth2 token acquired",
 		slog.Int("expires_in_sec", tr.ExpiresIn))
