@@ -45,7 +45,7 @@ type SightingLogger interface {
 // FlightEnricher enriches aircraft metadata and flight route information.
 type FlightEnricher interface {
 	Enrich(ctx context.Context, icao24 string) bool
-	EnrichRoute(ctx context.Context, callsign string)
+	EnrichRoute(ctx context.Context, callsign string) bool
 }
 
 // -------------------------------------------------------------------------
@@ -154,8 +154,9 @@ func (p *Poller) poll(ctx context.Context) {
 			}
 		}
 		if callsign := strings.TrimSpace(sv.Callsign); callsign != "" && !p.seenRoutes[callsign] {
-			p.enricher.EnrichRoute(ctx, callsign)
-			p.seenRoutes[callsign] = true
+			if p.enricher.EnrichRoute(ctx, callsign) {
+				p.seenRoutes[callsign] = true
+			}
 		}
 		count++
 	}

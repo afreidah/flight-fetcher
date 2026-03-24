@@ -24,7 +24,7 @@ import (
 // AIRCRAFT METADATA TESTS
 // -------------------------------------------------------------------------
 
-// TestEnrich_AlreadyCached verifies that a cached aircraft returns false (not new).
+// TestEnrich_AlreadyCached verifies that a cached aircraft returns true (enrichment complete).
 func TestEnrich_AlreadyCached(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockAircraftStore(ctrl)
@@ -36,8 +36,8 @@ func TestEnrich_AlreadyCached(t *testing.T) {
 
 	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
-	if got != false {
-		t.Errorf("Enrich() = %v, want false for already cached aircraft", got)
+	if got != true {
+		t.Errorf("Enrich() = %v, want true for already cached aircraft", got)
 	}
 }
 
@@ -112,7 +112,7 @@ func TestEnrich_StoreGetError(t *testing.T) {
 	}
 }
 
-// TestEnrich_LookupError verifies that a lookup failure still returns true (new aircraft).
+// TestEnrich_LookupError verifies that a lookup failure returns false so the caller retries.
 func TestEnrich_LookupError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockAircraftStore(ctrl)
@@ -127,8 +127,8 @@ func TestEnrich_LookupError(t *testing.T) {
 
 	enr := New(lookup, store, nil, nil)
 	got := enr.Enrich(context.Background(), "abc123")
-	if got != true {
-		t.Errorf("Enrich() = %v, want true when lookup fails (still a new aircraft)", got)
+	if got != false {
+		t.Errorf("Enrich() = %v, want false when lookup fails (should retry)", got)
 	}
 }
 

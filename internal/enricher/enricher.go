@@ -75,7 +75,8 @@ func New(lookup AircraftLookup, store AircraftStore, routeLookup RouteLookup, ro
 }
 
 // Enrich looks up and caches aircraft metadata if not already known. Returns
-// true if this is a newly seen aircraft.
+// true when enrichment is complete (data cached or confirmed absent). Returns
+// false on transient errors so the caller can retry.
 func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 	existing, err := e.store.GetAircraftMeta(ctx, icao24)
 	if err != nil {
@@ -85,7 +86,7 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		return false
 	}
 	if existing != nil {
-		return false
+		return true
 	}
 
 	info, err := e.lookup.Lookup(ctx, icao24)
@@ -93,12 +94,11 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 		slog.WarnContext(ctx, "hexdb lookup failed",
 			slog.String("icao24", icao24),
 			slog.String("error", err.Error()))
-		return true
+		return false
 	}
 	if info == nil {
 		slog.DebugContext(ctx, "no hexdb data found",
 			slog.String("icao24", icao24))
-		// Cache a sentinel so we don't look this up again
 		sentinel := &hexdb.AircraftInfo{ICAO24: icao24}
 		if err := e.store.SaveAircraftMeta(ctx, sentinel); err != nil {
 			slog.WarnContext(ctx, "failed to save aircraft sentinel",
@@ -117,10 +117,12 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 }
 
 // EnrichRoute looks up and caches flight route information if not already
-// known. No-op when route enrichment is not configured.
-func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) {
+// known. Returns true when complete (cached or confirmed absent), false on
+// transient errors so the caller can retry. No-op (returns true) when route
+// enrichment is not configured.
+func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 	if e.routeLookup == nil || e.routeStore == nil {
-		return
+		return true
 	}
 
 	existing, err := e.routeStore.GetFlightRoute(ctx, callsign)
@@ -128,10 +130,10 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) {
 		slog.WarnContext(ctx, "failed to check flight route",
 			slog.String("callsign", callsign),
 			slog.String("error", err.Error()))
-		return
+		return false
 	}
 	if existing != nil {
-		return
+		return true
 	}
 
 	route, err := e.routeLookup.LookupRoute(ctx, callsign)
@@ -139,12 +141,12 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) {
 		slog.WarnContext(ctx, "airlabs route lookup failed",
 			slog.String("callsign", callsign),
 			slog.String("error", err.Error()))
-		return
+		return false
 	}
 	if route == nil {
 		slog.DebugContext(ctx, "no route data found",
 			slog.String("callsign", callsign))
-		return
+		return true
 	}
 
 	if err := e.routeStore.SaveFlightRoute(ctx, route); err != nil {
@@ -152,4 +154,5 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) {
 			slog.String("callsign", callsign),
 			slog.String("error", err.Error()))
 	}
+	return true
 }

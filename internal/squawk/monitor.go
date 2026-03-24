@@ -49,7 +49,7 @@ type AlertStore interface {
 // AlertEnricher enriches aircraft metadata and route information.
 type AlertEnricher interface {
 	Enrich(ctx context.Context, icao24 string) bool
-	EnrichRoute(ctx context.Context, callsign string)
+	EnrichRoute(ctx context.Context, callsign string) bool
 }
 
 // -------------------------------------------------------------------------
