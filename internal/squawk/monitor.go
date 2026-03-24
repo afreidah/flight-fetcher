@@ -19,6 +19,7 @@ import (
 
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
+	"github.com/afreidah/flight-fetcher/internal/runloop"
 )
 
 // -------------------------------------------------------------------------
@@ -86,22 +87,7 @@ func New(source GlobalFlightSource, store AlertStore, enricher AlertEnricher, in
 
 // Run starts the monitor loop. Blocks until ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) {
-	ticker := time.NewTicker(m.interval)
-	defer ticker.Stop()
-
-	slog.InfoContext(ctx, "squawk monitor started",
-		slog.String("interval", m.interval.String()))
-
-	m.scan(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			slog.InfoContext(ctx, "squawk monitor stopped")
-			return
-		case <-ticker.C:
-			m.scan(ctx)
-		}
-	}
+	runloop.Run(ctx, "squawk monitor", m.interval, m.scan)
 }
 
 // -------------------------------------------------------------------------

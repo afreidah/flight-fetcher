@@ -19,6 +19,7 @@ import (
 
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
+	"github.com/afreidah/flight-fetcher/internal/runloop"
 )
 
 //go:generate mockgen -destination mock_poller_test.go -package poller github.com/afreidah/flight-fetcher/internal/poller FlightSource,FlightCache,SightingLogger,FlightEnricher
@@ -94,25 +95,11 @@ func New(
 
 // Run starts the polling loop. Blocks until ctx is cancelled.
 func (p *Poller) Run(ctx context.Context) {
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
-
-	slog.InfoContext(ctx, "poller started",
+	slog.InfoContext(ctx, "poller config",
 		slog.Float64("lat", p.center.Lat),
 		slog.Float64("lon", p.center.Lon),
-		slog.Float64("radius_km", p.radiusKm),
-		slog.String("interval", p.interval.String()))
-
-	p.poll(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			slog.InfoContext(ctx, "poller stopped")
-			return
-		case <-ticker.C:
-			p.poll(ctx)
-		}
-	}
+		slog.Float64("radius_km", p.radiusKm))
+	runloop.Run(ctx, "poller", p.interval, p.poll)
 }
 
 // -------------------------------------------------------------------------
