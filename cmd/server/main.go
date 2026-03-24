@@ -85,7 +85,13 @@ func main() {
 		}
 	}
 
-	enr := enricher.New(hexdbClient, pgStore, routeLookup, routeFallback, routeStore)
+	enr := enricher.New(&enricher.Options{
+		Lookup:        hexdbClient,
+		Store:         pgStore,
+		RouteLookup:   routeLookup,
+		RouteFallback: routeFallback,
+		RouteStore:    routeStore,
+	})
 	p := poller.New(&poller.Options{
 		Source:        oskyClient,
 		Cache:         redisStore,
