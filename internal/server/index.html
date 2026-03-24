@@ -63,11 +63,20 @@
 
   <script>
     var expanded = null;
+    var cachedFlights = [];
+    var flightMap = {};
 
     async function loadFlights() {
       try {
         var resp = await fetch("/api/flights");
         var flights = await resp.json();
+        if (flights.length === 0 && cachedFlights.length > 0) {
+          document.getElementById("status").textContent = cachedFlights.length + " aircraft (stale)";
+          return;
+        }
+        cachedFlights = flights;
+        flightMap = {};
+        flights.forEach(function(f) { flightMap[f.icao24] = f; });
         document.getElementById("status").textContent = flights.length + " aircraft in range";
         var el = document.getElementById("flights");
         el.innerHTML = "";
@@ -107,8 +116,14 @@
       if (!el) return;
       try {
         var resp = await fetch("/api/flights/" + encodeURIComponent(icao24));
-        if (!resp.ok) return;
-        var data = await resp.json();
+        var data;
+        if (resp.ok) {
+          data = await resp.json();
+        } else if (flightMap[icao24]) {
+          data = { state: flightMap[icao24] };
+        } else {
+          return;
+        }
         var mapId = "map-" + icao24;
         el.innerHTML = buildDetail(data, mapId);
         if (activeMap) { activeMap.remove(); activeMap = null; }
