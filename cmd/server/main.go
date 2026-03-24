@@ -59,7 +59,8 @@ func main() {
 	oskyClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 	hexdbClient := hexdb.NewClient()
 
-	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	redisTTL := pollInterval * 3
+	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, redisTTL)
 	defer redisStore.Close()
 
 	pgStore, err := store.NewPostgresStore(ctx, cfg.Postgres.DSN)

@@ -28,10 +28,6 @@ import (
 // flightKeyPrefix is the Redis key prefix for flight state entries.
 const flightKeyPrefix = "flight:"
 
-// defaultTTL is the expiry time for flight state entries. Aircraft that stop
-// broadcasting are automatically cleaned up after this duration.
-const defaultTTL = 2 * time.Minute
-
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
@@ -39,6 +35,7 @@ const defaultTTL = 2 * time.Minute
 // RedisStore manages current flight state in Redis.
 type RedisStore struct {
 	client *redis.Client
+	ttl    time.Duration
 }
 
 // -------------------------------------------------------------------------
@@ -46,13 +43,15 @@ type RedisStore struct {
 // -------------------------------------------------------------------------
 
 // NewRedisStore creates a RedisStore connected to the given Redis instance.
-func NewRedisStore(addr, password string, db int) *RedisStore {
+// The ttl parameter controls how long flight entries persist before expiring.
+func NewRedisStore(addr, password string, db int, ttl time.Duration) *RedisStore {
 	return &RedisStore{
 		client: redis.NewClient(&redis.Options{
 			Addr:     addr,
 			Password: password,
 			DB:       db,
 		}),
+		ttl: ttl,
 	}
 }
 
@@ -63,7 +62,7 @@ func (r *RedisStore) SetFlight(ctx context.Context, sv *opensky.StateVector) err
 		return fmt.Errorf("marshaling state: %w", err)
 	}
 	key := flightKeyPrefix + sv.ICAO24
-	return r.client.Set(ctx, key, data, defaultTTL).Err()
+	return r.client.Set(ctx, key, data, r.ttl).Err()
 }
 
 // GetAllFlights returns all current flight states stored in Redis. Uses SCAN
