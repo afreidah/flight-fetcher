@@ -53,15 +53,20 @@ type SquawkAlertReader interface {
 // TYPES
 // -------------------------------------------------------------------------
 
+// Options holds the dependencies and configuration for the dashboard server.
+type Options struct {
+	Flights    FlightLister
+	Aircraft   AircraftMetaReader
+	Routes     RouteReader
+	Alerts     SquawkAlertReader
+	Version    string
+	RefreshSec int
+}
+
 // Server serves the web dashboard and flight data API.
 type Server struct {
-	flights  FlightLister
-	aircraft AircraftMetaReader
-	routes   RouteReader
-	alerts   SquawkAlertReader
-	version  string
-	refresh  int
-	mux      *http.ServeMux
+	opts Options
+	mux  *http.ServeMux
 }
 
 // flightDetail combines live state, enriched metadata, and route information.
@@ -75,17 +80,11 @@ type flightDetail struct {
 // PUBLIC API
 // -------------------------------------------------------------------------
 
-// New creates a Server with the given data sources, version string, and
-// dashboard refresh interval in seconds.
-func New(flights FlightLister, aircraft AircraftMetaReader, routes RouteReader, alerts SquawkAlertReader, version string, refreshSec int) *Server {
+// New creates a Server with the given options.
+func New(opts *Options) *Server {
 	s := &Server{
-		flights:  flights,
-		aircraft: aircraft,
-		routes:   routes,
-		alerts:   alerts,
-		version:  version,
-		refresh:  refreshSec,
-		mux:      http.NewServeMux(),
+		opts: *opts,
+		mux:  http.NewServeMux(),
 	}
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	s.mux.HandleFunc("GET /api/flights", s.handleListFlights)
@@ -120,7 +119,7 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) {
 // handleIndex serves the embedded HTML dashboard page.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := w.Write(renderedHTML(s.version, s.refresh)); err != nil {
+	if _, err := w.Write(renderedHTML(s.opts.Version, s.opts.RefreshSec)); err != nil {
 		slog.WarnContext(r.Context(), "failed to write index page",
 			slog.String("error", err.Error()))
 	}
@@ -128,7 +127,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 // handleListFlights returns all current flights as JSON.
 func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
-	flights, err := s.flights.GetAllFlights(r.Context())
+	flights, err := s.opts.Flights.GetAllFlights(r.Context())
 	if err != nil {
 		http.Error(w, "failed to list flights", http.StatusInternalServerError)
 		slog.WarnContext(r.Context(), "api: list flights failed",
@@ -142,7 +141,7 @@ func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 	icao24 := r.PathValue("icao24")
 
-	sv, err := s.flights.GetFlight(r.Context(), icao24)
+	sv, err := s.opts.Flights.GetFlight(r.Context(), icao24)
 	if err != nil {
 		http.Error(w, "failed to get flight", http.StatusInternalServerError)
 		slog.WarnContext(r.Context(), "api: get flight failed",
@@ -156,7 +155,7 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	detail := flightDetail{State: sv}
-	meta, err := s.aircraft.GetAircraftMeta(r.Context(), icao24)
+	meta, err := s.opts.Aircraft.GetAircraftMeta(r.Context(), icao24)
 	if err != nil {
 		slog.WarnContext(r.Context(), "api: aircraft meta lookup failed",
 			slog.String("icao24", icao24),
@@ -167,8 +166,8 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 	}
 	detail.Aircraft = meta
 
-	if s.routes != nil && sv.Callsign != "" {
-		route, err := s.routes.GetFlightRoute(r.Context(), strings.TrimSpace(sv.Callsign))
+	if s.opts.Routes != nil && sv.Callsign != "" {
+		route, err := s.opts.Routes.GetFlightRoute(r.Context(), strings.TrimSpace(sv.Callsign))
 		if err != nil {
 			slog.WarnContext(r.Context(), "api: route lookup failed",
 				slog.String("icao24", icao24),
@@ -182,11 +181,11 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 
 // handleSquawkAlerts returns recent emergency squawk alerts as JSON.
 func (s *Server) handleSquawkAlerts(w http.ResponseWriter, r *http.Request) {
-	if s.alerts == nil {
+	if s.opts.Alerts == nil {
 		writeJSON(r.Context(), w, []any{})
 		return
 	}
-	alerts, err := s.alerts.GetRecentSquawkAlerts(r.Context(), 24*time.Hour)
+	alerts, err := s.opts.Alerts.GetRecentSquawkAlerts(r.Context(), 24*time.Hour)
 	if err != nil {
 		http.Error(w, "failed to get squawk alerts", http.StatusInternalServerError)
 		slog.WarnContext(r.Context(), "api: squawk alerts failed",
@@ -199,7 +198,7 @@ func (s *Server) handleSquawkAlerts(w http.ResponseWriter, r *http.Request) {
 // handleGetAircraft returns cached aircraft metadata by ICAO24.
 func (s *Server) handleGetAircraft(w http.ResponseWriter, r *http.Request) {
 	icao24 := r.PathValue("icao24")
-	meta, err := s.aircraft.GetAircraftMeta(r.Context(), icao24)
+	meta, err := s.opts.Aircraft.GetAircraftMeta(r.Context(), icao24)
 	if err != nil {
 		http.Error(w, "failed to get aircraft", http.StatusInternalServerError)
 		slog.WarnContext(r.Context(), "api: aircraft lookup failed",
@@ -217,11 +216,11 @@ func (s *Server) handleGetAircraft(w http.ResponseWriter, r *http.Request) {
 // handleGetRoute returns cached flight route information by callsign.
 func (s *Server) handleGetRoute(w http.ResponseWriter, r *http.Request) {
 	callsign := r.PathValue("callsign")
-	if s.routes == nil {
+	if s.opts.Routes == nil {
 		http.Error(w, "route not found", http.StatusNotFound)
 		return
 	}
-	route, err := s.routes.GetFlightRoute(r.Context(), callsign)
+	route, err := s.opts.Routes.GetFlightRoute(r.Context(), callsign)
 	if err != nil {
 		http.Error(w, "failed to get route", http.StatusInternalServerError)
 		slog.WarnContext(r.Context(), "api: route lookup failed",
