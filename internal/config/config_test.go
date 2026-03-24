@@ -122,7 +122,7 @@ retention {
 	if cfg.Retention == nil {
 		t.Fatal("Retention should not be nil when block is present")
 	}
-	sightings, alerts, interval, err := cfg.Retention.RetentionDurations()
+	sightings, alerts, _, interval, err := cfg.Retention.RetentionDurations()
 	if err != nil {
 		t.Fatalf("RetentionDurations() error = %v", err)
 	}
@@ -171,7 +171,7 @@ retention {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	_, _, interval, err := cfg.Retention.RetentionDurations()
+	_, _, _, interval, err := cfg.Retention.RetentionDurations()
 	if err != nil {
 		t.Fatalf("RetentionDurations() error = %v", err)
 	}

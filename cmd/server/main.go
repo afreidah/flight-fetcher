@@ -64,7 +64,7 @@ func main() {
 	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, redisTTL)
 	defer redisStore.Close()
 
-	pgStore, err := store.NewPostgresStore(ctx, cfg.Postgres.DSN)
+	pgStore, err := store.NewPostgresStore(ctx, cfg.Postgres.DSN, 0)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to connect to postgres", slog.String("error", err.Error()))
 		os.Exit(1)
@@ -123,13 +123,13 @@ func main() {
 	}
 
 	if cfg.Retention != nil {
-		sightingsAge, alertsAge, interval, err := cfg.Retention.RetentionDurations()
+		sightingsAge, alertsAge, routesAge, interval, err := cfg.Retention.RetentionDurations()
 		if err != nil {
 			slog.ErrorContext(ctx, "failed to parse retention config",
 				slog.String("error", err.Error()))
 			os.Exit(1)
 		}
-		rw := retention.New(pgStore, sightingsAge, alertsAge, interval)
+		rw := retention.New(pgStore, sightingsAge, alertsAge, routesAge, interval)
 		go rw.Run(ctx)
 	}
 

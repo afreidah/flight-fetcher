@@ -34,10 +34,14 @@ import (
 // TYPES
 // -------------------------------------------------------------------------
 
+// DefaultRouteTTL is the default time before cached routes are considered stale.
+const DefaultRouteTTL = 24 * time.Hour
+
 // PostgresStore manages aircraft metadata and sighting history in PostgreSQL.
 type PostgresStore struct {
-	pool    *pgxpool.Pool
-	queries *db.Queries
+	pool     *pgxpool.Pool
+	queries  *db.Queries
+	routeTTL time.Duration
 }
 
 // -------------------------------------------------------------------------
@@ -45,8 +49,9 @@ type PostgresStore struct {
 // -------------------------------------------------------------------------
 
 // NewPostgresStore opens a connection pool to PostgreSQL, runs pending
-// migrations, and returns a ready-to-use store.
-func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
+// migrations, and returns a ready-to-use store. The routeTTL controls how
+// long cached routes are considered fresh (0 uses DefaultRouteTTL).
+func NewPostgresStore(ctx context.Context, dsn string, routeTTL time.Duration) (*PostgresStore, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("creating connection pool: %w", err)
@@ -61,9 +66,13 @@ func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
 		return nil, fmt.Errorf("running migrations: %w", err)
 	}
 
+	if routeTTL <= 0 {
+		routeTTL = DefaultRouteTTL
+	}
 	return &PostgresStore{
-		pool:    pool,
-		queries: db.New(pool),
+		pool:     pool,
+		queries:  db.New(pool),
+		routeTTL: routeTTL,
 	}, nil
 }
 
@@ -126,9 +135,12 @@ func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *airlabs.Flig
 }
 
 // GetFlightRoute retrieves cached route information by callsign. Returns nil
-// if the route has not been looked up yet.
+// if the route has not been looked up yet or the cached entry is stale.
 func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*airlabs.FlightRoute, error) {
-	row, err := p.queries.GetFlightRoute(ctx, callsign)
+	row, err := p.queries.GetFlightRoute(ctx, db.GetFlightRouteParams{
+		Callsign: callsign,
+		CachedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.routeTTL), Valid: true},
+	})
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -202,6 +214,19 @@ func (p *PostgresStore) DeleteOldSightings(ctx context.Context, maxAge time.Dura
 // Returns the number of rows deleted.
 func (p *PostgresStore) DeleteOldSquawkAlerts(ctx context.Context, maxAge time.Duration) (int64, error) {
 	result, err := p.queries.DeleteOldSquawkAlerts(ctx, pgtype.Timestamptz{
+		Time:  time.Now().UTC().Add(-maxAge),
+		Valid: true,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+// DeleteOldRoutes removes cached routes older than the given duration.
+// Returns the number of rows deleted.
+func (p *PostgresStore) DeleteOldRoutes(ctx context.Context, maxAge time.Duration) (int64, error) {
+	result, err := p.queries.DeleteOldRoutes(ctx, pgtype.Timestamptz{
 		Time:  time.Now().UTC().Add(-maxAge),
 		Valid: true,
 	})

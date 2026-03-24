@@ -54,4 +54,5 @@ squawk_monitor {
 retention {
   sightings_max_age = "720h"
   alerts_max_age    = "168h"
+  routes_max_age    = "24h"
 }
