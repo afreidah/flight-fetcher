@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	hexdb "github.com/afreidah/flight-fetcher/internal/hexdb"
+	aircraft "github.com/afreidah/flight-fetcher/internal/aircraft"
 	route "github.com/afreidah/flight-fetcher/internal/route"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -43,10 +43,10 @@ func (m *MockAircraftStore) EXPECT() *MockAircraftStoreMockRecorder {
 }
 
 // GetAircraftMeta mocks base method.
-func (m *MockAircraftStore) GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error) {
+func (m *MockAircraftStore) GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAircraftMeta", ctx, icao24)
-	ret0, _ := ret[0].(*hexdb.AircraftInfo)
+	ret0, _ := ret[0].(*aircraft.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -58,7 +58,7 @@ func (mr *MockAircraftStoreMockRecorder) GetAircraftMeta(ctx, icao24 any) *gomoc
 }
 
 // SaveAircraftMeta mocks base method.
-func (m *MockAircraftStore) SaveAircraftMeta(ctx context.Context, info *hexdb.AircraftInfo) error {
+func (m *MockAircraftStore) SaveAircraftMeta(ctx context.Context, info *aircraft.Info) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SaveAircraftMeta", ctx, info)
 	ret0, _ := ret[0].(error)
@@ -96,10 +96,10 @@ func (m *MockAircraftLookup) EXPECT() *MockAircraftLookupMockRecorder {
 }
 
 // Lookup mocks base method.
-func (m *MockAircraftLookup) Lookup(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error) {
+func (m *MockAircraftLookup) Lookup(ctx context.Context, icao24 string) (*aircraft.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Lookup", ctx, icao24)
-	ret0, _ := ret[0].(*hexdb.AircraftInfo)
+	ret0, _ := ret[0].(*aircraft.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

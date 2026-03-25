@@ -12,17 +12,23 @@ A self-hosted aircraft tracking service written in Go that monitors airspace aro
 
 * **Aircraft Polling and Filtering** - Queries the OpenSky Network REST API on a configurable interval for aircraft state vectors within a geographic bounding box, then applies precise haversine distance filtering to enforce a circular radius. Each poll cycle captures ICAO24 identifier, callsign, position, altitude, velocity, heading, vertical rate, ground status, and squawk transponder code.
 
-* **Aircraft Metadata Enrichment** - When a previously unseen ICAO24 appears, the service queries HexDB.io for static aircraft information including registration number, manufacturer, aircraft type, and operator. Results are cached in PostgreSQL so each aircraft is only looked up once. Enrichment is retried on transient errors.
+* **Aircraft Metadata Enrichment** - When a previously unseen ICAO24 appears, the service queries HexDB.io for static aircraft information including registration number, manufacturer, aircraft type, and operator. Results are cached in PostgreSQL so each aircraft is only looked up once. Enrichment runs asynchronously in a background worker pool so poll cycles are never blocked by external API latency.
 
 * **Flight Route Enrichment** - When a new callsign appears, the service queries AirLabs (primary) and FlightAware AeroAPI (fallback) to resolve departure and arrival airports. Routes are cached in PostgreSQL with a configurable TTL (default 24h) so stale routes are refreshed daily. The enrichment cache is periodically evicted to retry previously failed lookups.
 
-* **Squawk Code Tracking** - Parses transponder squawk codes from OpenSky data for all local aircraft. A separate background worker optionally polls the global OpenSky endpoint to detect emergency squawk codes worldwide (7500 hijack, 7600 radio failure, 7700 general emergency), with in-memory deduplication to prevent duplicate alerts.
+* **Circuit Breaking** - All external API clients share a common HTTP client with exponential backoff on rate limits (429), server errors (5xx), and transport failures. This prevents request storms against down services and allows automatic recovery.
+
+* **Squawk Code Tracking** - Parses transponder squawk codes from OpenSky data for all local aircraft. A separate background worker optionally polls the global OpenSky endpoint to detect emergency squawk codes worldwide (7500 hijack, 7600 radio failure, 7700 general emergency), with deduplication to prevent duplicate alerts.
 
 * **Dual Storage** - Current flight state is written to Redis with a TTL of 3x the poll interval, so aircraft automatically disappear when they leave the area. Historical sightings, aircraft metadata, flight routes, and squawk alerts are persisted in PostgreSQL via sqlc-generated queries, with goose migrations run automatically on startup.
 
-* **Data Retention** - An optional background worker periodically cleans up old sightings, squawk alerts, and stale routes to prevent unbounded table growth.
+* **Data Retention** - An optional background worker periodically cleans up old sightings, squawk alerts, and stale routes using batched deletes to prevent table lock contention.
 
 * **Web Dashboard** - A split-pane dashboard with an interactive map. The left pane shows flight cards and global squawk alerts. The right pane has a persistent Leaflet map with all aircraft plotted as rotated airplane icons, with flight detail rendered below. Clicking a card or marker selects the flight, highlights it on the map, and displays enriched metadata and route information. Refresh interval is configurable.
+
+* **Observability** - OpenTelemetry distributed tracing with OTLP gRPC export, Prometheus metrics via `/metrics` endpoint, and automatic log-trace correlation (trace_id and span_id injected into slog JSON output). Instrumentation covers API clients, poll cycles, enrichment, store operations, and HTTP requests.
+
+* **Graceful Degradation** - The dashboard returns partial data instead of errors when backends are unavailable. The health endpoint (`/healthz`) reports per-component status with three states: healthy, degraded, and unhealthy.
 
 ```
          OpenSky Network API
@@ -107,9 +113,26 @@ retention {
 }
 ```
 
+The `-log-level` flag controls log verbosity (`debug`, `info`, `warn`, `error`). Defaults to `info`.
+
+Tracing is exported via OTLP gRPC, configurable with the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable (defaults to `localhost:4317`). No-ops if no collector is running.
+
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Web dashboard |
+| `GET /api/flights` | All current flights |
+| `GET /api/flights/{icao24}` | Flight detail with metadata and route |
+| `GET /api/aircraft/{icao24}` | Aircraft metadata |
+| `GET /api/routes/{callsign}` | Flight route |
+| `GET /api/squawk-alerts` | Recent emergency squawk alerts |
+| `GET /healthz` | Health check (JSON, per-component status) |
+| `GET /metrics` | Prometheus metrics |
+
 ## Deployment
 
-Deploys as a Nomad job with Consul service discovery, Vault secret injection, and Traefik reverse proxy with OAuth2 authentication. The Docker image is a multi-stage Alpine build producing a minimal container with the static Go binary. A docker-compose environment is provided for local development with PostgreSQL and Redis.
+Deploys as a Nomad job with Consul service discovery, Vault secret injection, and Traefik reverse proxy with OAuth2 authentication. The Docker image is a multi-stage Alpine build producing a minimal container running as a non-root user. A docker-compose environment is provided for local development with PostgreSQL and Redis.
 
 ## Development
 
@@ -120,6 +143,7 @@ make vet                    # Go vet static analysis
 make lint                   # golangci-lint
 make test                   # unit tests with race detector and coverage
 make govulncheck            # Go vulnerability scanner
+make generate               # regenerate sqlc and mocks
 make run                    # run locally (requires config.hcl)
 make push                   # build and push multi-arch images to registry
 ```
@@ -129,25 +153,29 @@ make push                   # build and push multi-arch images to registry
 ```
 cmd/
   server/
-    main.go                 # entrypoint, config, signal handling
+    main.go                 # entrypoint, config, signal handling, errgroup
 internal/
+  aircraft/                 # shared aircraft metadata domain type
+  airlabs/                  # AirLabs API client (route primary)
+  apiclient/                # shared HTTP client with backoff and circuit breaking
   config/config.go          # HCL config loading and validation
-  poller/poller.go          # OpenSky polling loop with enrichment eviction
-  opensky/                  # OpenSky API client, OAuth2, backoff, types
-  hexdb/                    # HexDB.io API client and types
-  airlabs/                  # AirLabs API client and types (route primary)
-  flightaware/              # FlightAware AeroAPI client (route fallback)
   enricher/enricher.go      # aircraft metadata + route enrichment with fallback
-  squawk/                   # global emergency squawk monitor
-  retention/                # data retention cleanup worker
-  runloop/                  # shared ticker loop helper
-  server/                   # web dashboard (split-pane map, JSON API)
-  store/
-    redis.go                # current flight state (TTL-based)
-    postgres.go             # metadata, routes, sightings, squawk alerts
+  flightaware/              # FlightAware AeroAPI client (route fallback)
   geo/geo.go                # haversine distance, bbox calculation
+  hexdb/                    # HexDB.io API client
+  observe/                  # OpenTelemetry + Prometheus initialization
+  opensky/                  # OpenSky API client, OAuth2
+  poller/poller.go          # polling loop with async enrichment worker pool
+  retention/                # data retention cleanup worker
+  route/                    # shared flight route domain type
+  runloop/                  # shared ticker loop helper
+  server/                   # web dashboard (split-pane map, JSON API, metrics)
+  squawk/                   # global emergency squawk monitor
+  store/
+    redis.go                # current flight state (TTL-based, redisotel)
+    postgres.go             # metadata, routes, sightings, squawk alerts
 deploy/
-  Dockerfile                # multi-stage Alpine build
+  Dockerfile                # multi-stage Alpine build, non-root user
 ```
 
 ## License

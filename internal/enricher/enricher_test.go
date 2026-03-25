@@ -14,8 +14,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/route"
-	"github.com/afreidah/flight-fetcher/internal/hexdb"
 
 	"go.uber.org/mock/gomock"
 )
@@ -32,7 +32,7 @@ func TestEnrich_AlreadyCached(t *testing.T) {
 
 	store.EXPECT().
 		GetAircraftMeta(gomock.Any(), "abc123").
-		Return(&hexdb.AircraftInfo{ICAO24: "abc123"}, nil)
+		Return(&aircraft.Info{ICAO24: "abc123"}, nil)
 
 	enr := New(&Options{Lookup: lookup, Store: store})
 	got := enr.Enrich(context.Background(), "abc123")
@@ -47,7 +47,7 @@ func TestEnrich_NewAircraft_LookupSuccess(t *testing.T) {
 	store := NewMockAircraftStore(ctrl)
 	lookup := NewMockAircraftLookup(ctrl)
 
-	info := &hexdb.AircraftInfo{
+	info := &aircraft.Info{
 		ICAO24:           "abc123",
 		Registration:     "N12345",
 		ManufacturerName: "Boeing",
@@ -85,7 +85,7 @@ func TestEnrich_NewAircraft_NotInHexDB(t *testing.T) {
 		Lookup(gomock.Any(), "abc123").
 		Return(nil, nil)
 	store.EXPECT().
-		SaveAircraftMeta(gomock.Any(), &hexdb.AircraftInfo{ICAO24: "abc123"}).
+		SaveAircraftMeta(gomock.Any(), &aircraft.Info{ICAO24: "abc123"}).
 		Return(nil)
 
 	enr := New(&Options{Lookup: lookup, Store: store})
@@ -138,7 +138,7 @@ func TestEnrich_SaveError(t *testing.T) {
 	store := NewMockAircraftStore(ctrl)
 	lookup := NewMockAircraftLookup(ctrl)
 
-	info := &hexdb.AircraftInfo{ICAO24: "abc123", Type: "A320"}
+	info := &aircraft.Info{ICAO24: "abc123", Type: "A320"}
 
 	store.EXPECT().
 		GetAircraftMeta(gomock.Any(), "abc123").

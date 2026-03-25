@@ -19,8 +19,8 @@ import (
 
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/route"
-	"github.com/afreidah/flight-fetcher/internal/hexdb"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 )
@@ -48,12 +48,12 @@ func (s *stubFlightLister) GetFlight(_ context.Context, _ string) (*opensky.Stat
 
 // stubMetaReader is a minimal AircraftMetaReader for testing.
 type stubMetaReader struct {
-	info *hexdb.AircraftInfo
+	info *aircraft.Info
 	err  error
 }
 
 // GetAircraftMeta returns the stubbed aircraft metadata.
-func (s *stubMetaReader) GetAircraftMeta(_ context.Context, _ string) (*hexdb.AircraftInfo, error) {
+func (s *stubMetaReader) GetAircraftMeta(_ context.Context, _ string) (*aircraft.Info, error) {
 	return s.info, s.err
 }
 
@@ -180,7 +180,7 @@ func TestHandleListFlights_Empty(t *testing.T) {
 // TestHandleGetFlight_WithMeta verifies that flight detail includes enriched metadata.
 func TestHandleGetFlight_WithMeta(t *testing.T) {
 	sv := &opensky.StateVector{ICAO24: "abc123", Callsign: "UAL123", Latitude: 34.09, Longitude: -118.33}
-	meta := &hexdb.AircraftInfo{ICAO24: "abc123", Registration: "N12345", ManufacturerName: "Boeing", Type: "737-800"}
+	meta := &aircraft.Info{ICAO24: "abc123", Registration: "N12345", ManufacturerName: "Boeing", Type: "737-800"}
 	srv := New(&Options{Flights: &stubFlightLister{flight: sv}, Aircraft: &stubMetaReader{info: meta}, Version: "test", RefreshSec: 5})
 	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
 	w := httptest.NewRecorder()
@@ -377,7 +377,7 @@ func TestHandleSquawkAlerts_Error(t *testing.T) {
 
 // TestHandleGetAircraft_Success verifies that aircraft metadata is returned.
 func TestHandleGetAircraft_Success(t *testing.T) {
-	meta := &hexdb.AircraftInfo{ICAO24: "abc123", Registration: "N12345", ManufacturerName: "Boeing"}
+	meta := &aircraft.Info{ICAO24: "abc123", Registration: "N12345", ManufacturerName: "Boeing"}
 	srv := New(&Options{Flights: &stubFlightLister{}, Aircraft: &stubMetaReader{info: meta}, Version: "test", RefreshSec: 5})
 	req := httptest.NewRequest(http.MethodGet, "/api/aircraft/abc123", nil)
 	w := httptest.NewRecorder()
@@ -387,7 +387,7 @@ func TestHandleGetAircraft_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	var got hexdb.AircraftInfo
+	var got aircraft.Info
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestHandleGetRoute_Disabled(t *testing.T) {
 
 // TestHandleGetAircraft_Sentinel verifies that a sentinel record (empty fields) returns 404.
 func TestHandleGetAircraft_Sentinel(t *testing.T) {
-	sentinel := &hexdb.AircraftInfo{ICAO24: "abc123"}
+	sentinel := &aircraft.Info{ICAO24: "abc123"}
 	srv := New(&Options{Flights: &stubFlightLister{}, Aircraft: &stubMetaReader{info: sentinel}, Version: "test", RefreshSec: 5})
 	req := httptest.NewRequest(http.MethodGet, "/api/aircraft/abc123", nil)
 	w := httptest.NewRecorder()

@@ -18,7 +18,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/hexdb"
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/store/migrations"
@@ -105,7 +105,7 @@ func (p *PostgresStore) startSpan(ctx context.Context, name string) (context.Con
 }
 
 // SaveAircraftMeta caches aircraft metadata, upserting by ICAO24.
-func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *hexdb.AircraftInfo) error {
+func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *aircraft.Info) error {
 	ctx, endSpan := p.startSpan(ctx, "SaveAircraftMeta")
 	err := p.queries.UpsertAircraftMeta(ctx, db.UpsertAircraftMetaParams{
 		Icao24:       info.ICAO24,
@@ -120,7 +120,7 @@ func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *hexdb.Aircra
 
 // GetAircraftMeta retrieves cached aircraft metadata by ICAO24. Returns nil
 // if the aircraft has not been enriched yet.
-func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error) {
+func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error) {
 	row, err := p.queries.GetAircraftMeta(ctx, icao24)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -128,7 +128,7 @@ func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*he
 	if err != nil {
 		return nil, err
 	}
-	return &hexdb.AircraftInfo{
+	return &aircraft.Info{
 		ICAO24:           row.Icao24,
 		Registration:     row.Registration,
 		ManufacturerName: row.Manufacturer,
