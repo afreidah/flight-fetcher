@@ -125,6 +125,74 @@ func TestDo_RateLimit(t *testing.T) {
 	}
 }
 
+// TestDo_ServerError verifies that a 5xx response triggers backoff.
+func TestDo_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	c := New(Options{BaseURL: srv.URL})
+
+	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
+	_, err := c.Do(req)
+	if err == nil {
+		t.Fatal("Do() expected error for 502, got nil")
+	}
+	if !strings.Contains(err.Error(), "server error") {
+		t.Errorf("error = %q, want it to contain 'server error'", err.Error())
+	}
+
+	// Backoff should now block the next NewRequest
+	_, err = c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
+	if err == nil {
+		t.Fatal("NewRequest() expected backoff error after 5xx, got nil")
+	}
+}
+
+// TestDo_TransportError verifies that a connection failure triggers backoff.
+func TestDo_TransportError(t *testing.T) {
+	// Point at a port nothing is listening on
+	c := New(Options{BaseURL: "http://127.0.0.1:1"})
+
+	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
+	_, err := c.Do(req)
+	if err == nil {
+		t.Fatal("Do() expected error for connection refused, got nil")
+	}
+
+	// Backoff should now block the next NewRequest
+	_, err = c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
+	if err == nil {
+		t.Fatal("NewRequest() expected backoff error after transport failure, got nil")
+	}
+}
+
+// TestDo_ClientError_NoBackoff verifies that 4xx responses (except 429) do not trigger backoff.
+func TestDo_ClientError_NoBackoff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := New(Options{BaseURL: srv.URL})
+
+	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v, want nil for 404", err)
+	}
+	resp.Body.Close()
+
+	// Should NOT be in backoff — 4xx is a caller problem, not the server's
+	req, err = c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() should not be blocked after 404, got: %v", err)
+	}
+	resp, _ = c.Do(req)
+	resp.Body.Close()
+}
+
 // TestDo_BackoffEscalates verifies that repeated 429s double the backoff up to max.
 func TestDo_BackoffEscalates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

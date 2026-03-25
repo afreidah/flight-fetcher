@@ -92,18 +92,26 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body io.Re
 	return req, nil
 }
 
-// Do executes a request, applying exponential backoff on 429 responses.
-// On rate limit, the response body is closed and an error is returned.
-// The caller must close resp.Body on success.
+// Do executes a request with circuit breaker behavior. Applies exponential
+// backoff on rate limits (429), server errors (5xx), and transport failures
+// (connection refused, timeouts). On these errors the response body is
+// closed and an error is returned. The caller must close resp.Body on
+// success.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.applyBackoff(req.Context())
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		resp.Body.Close()
 		c.applyBackoff(req.Context())
 		return nil, fmt.Errorf("rate limited (429), backing off for %s", c.currentBackoff())
+	}
+	if resp.StatusCode >= 500 {
+		resp.Body.Close()
+		c.applyBackoff(req.Context())
+		return nil, fmt.Errorf("server error (%d), backing off for %s", resp.StatusCode, c.currentBackoff())
 	}
 	c.resetBackoff()
 	return resp, nil
