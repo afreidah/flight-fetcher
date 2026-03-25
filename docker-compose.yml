@@ -3,9 +3,12 @@
 #
 # Project: Flight Fetcher / Author: Alex Freidah
 #
-# Runs the full stack locally: Postgres, Redis, and the flight-fetcher service.
+# Runs the full stack locally: Postgres, Redis, the flight-fetcher service, and
+# an optional observability stack (Grafana, Prometheus, Loki, Tempo, Alloy).
 # Copy config.example.hcl to config.hcl and fill in OpenSky credentials before
 # starting: docker compose up --build
+#
+# Grafana dashboard: http://localhost:13000
 # -------------------------------------------------------------------------------
 
 services:
@@ -50,6 +53,9 @@ services:
       dockerfile: deploy/Dockerfile
     ports:
       - "8080:8080"
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://tempo:4317"
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
     volumes:
       - ./config.hcl:/etc/flight-fetcher/config.hcl:ro
     command: ["-config", "/etc/flight-fetcher/config.hcl"]
@@ -59,5 +65,81 @@ services:
       redis:
         condition: service_healthy
 
+  # -------------------------------------------------------------------------
+  # OBSERVABILITY STACK (optional — stands up with `make run`)
+  # -------------------------------------------------------------------------
+
+  tempo:
+    image: grafana/tempo:2.9.1
+    ports:
+      - "13200:3200"
+      - "14317:4317"
+    volumes:
+      - ./deploy/monitoring/tempo.yml:/etc/tempo.yml:ro
+      - tempo-data:/var/tempo
+    command: ["-config.file=/etc/tempo.yml"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3200/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  loki:
+    image: grafana/loki:3.4.2
+    user: "0"
+    ports:
+      - "13100:3100"
+    volumes:
+      - ./deploy/monitoring/loki.yml:/etc/loki/config.yml:ro
+      - loki-data:/var/loki
+    command: ["-config.file=/etc/loki/config.yml"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  alloy:
+    image: grafana/alloy:latest
+    volumes:
+      - ./deploy/monitoring/alloy.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["run", "/etc/alloy/config.alloy"]
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "19090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "13000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/flight-fetcher.json:/var/lib/grafana/dashboards/flight-fetcher.json:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+
 volumes:
   pgdata:
+  loki-data:
+  tempo-data:

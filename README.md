@@ -26,7 +26,7 @@ A self-hosted aircraft tracking service written in Go that monitors airspace aro
 
 * **Web Dashboard** - A split-pane dashboard with an interactive map. The left pane shows flight cards and global squawk alerts. The right pane has a persistent Leaflet map with all aircraft plotted as rotated airplane icons, with flight detail rendered below. Clicking a card or marker selects the flight, highlights it on the map, and displays enriched metadata and route information. Refresh interval is configurable.
 
-* **Observability** - OpenTelemetry distributed tracing with OTLP gRPC export, Prometheus metrics via `/metrics` endpoint, and automatic log-trace correlation (trace_id and span_id injected into slog JSON output). Instrumentation covers API clients, poll cycles, enrichment, store operations, and HTTP requests.
+* **Observability** - OpenTelemetry distributed tracing with OTLP gRPC export, Prometheus metrics via `/metrics` endpoint, and automatic log-trace correlation (trace_id and span_id injected into slog JSON output). Instrumentation covers API clients, poll cycles, enrichment, store operations, and HTTP requests. A pre-built Grafana dashboard is included.
 
 * **Graceful Degradation** - The dashboard returns partial data instead of errors when backends are unavailable. The health endpoint (`/healthz`) reports per-component status with three states: healthy, degraded, and unhealthy.
 
@@ -52,16 +52,34 @@ A self-hosted aircraft tracking service written in Go that monitors airspace aro
 
 ## Quick Start
 
+The only prerequisite is [Docker](https://docs.docker.com/get-docker/) with Compose. Everything else — Postgres, Redis, and a full observability stack — runs in containers.
+
 ```bash
+git clone https://github.com/afreidah/flight-fetcher.git
+cd flight-fetcher
 cp config.example.hcl config.hcl
-# Edit config.hcl with your credentials
-# Register at https://opensky-network.org for OpenSky API access
-# Register at https://airlabs.co for flight route data (optional)
-# Register at https://flightaware.com/aeroapi for route fallback (optional)
-docker compose up --build
 ```
 
-The dashboard is available at `http://localhost:8080`.
+Edit `config.hcl` with your API credentials:
+- **OpenSky Network** (required) — register at https://opensky-network.org for a free OAuth2 client ID and secret
+- **AirLabs** (optional) — register at https://airlabs.co for flight route data
+- **FlightAware** (optional) — register at https://flightaware.com/aeroapi for route fallback
+
+Then start the full stack:
+
+```bash
+make run
+```
+
+This builds the Go binary, stands up Postgres, Redis, the flight-fetcher service, and a complete observability stack (Grafana, Prometheus, Loki, Tempo, Alloy) in Docker containers:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Dashboard | http://localhost:8080 | Flight tracking web UI with interactive map |
+| Grafana | http://localhost:13000 | Pre-built observability dashboard (metrics, logs, traces) |
+| Prometheus | http://localhost:19090 | Metrics storage and query |
+
+Grafana starts with anonymous admin access — no login required. The flight-fetcher dashboard is auto-imported with all datasources pre-configured. Use `make stop` to stop the stack or `make clean` to stop and remove all data.
 
 ## Configuration
 
@@ -114,26 +132,139 @@ retention {
 }
 ```
 
-The `-log-level` flag controls log verbosity (`debug`, `info`, `warn`, `error`). Defaults to `info`.
+### Required Blocks
 
-Tracing is exported via OTLP gRPC, configurable with the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable (defaults to `localhost:4317`). No-ops if no collector is running.
+| Block | Description |
+|-------|-------------|
+| `location` | Center point (`lat`, `lon`) and `radius_km` for the monitoring area |
+| `opensky` | OAuth2 client credentials (`id`, `secret`) for the OpenSky Network API |
+| `redis` | Redis address, optional `password` and `db` |
+| `postgres` | PostgreSQL connection string (`dsn`) |
+
+### Optional Blocks
+
+| Block | Description |
+|-------|-------------|
+| `server` | HTTP dashboard and API server (`listen` address, `refresh` interval in seconds) |
+| `airlabs` | AirLabs API key for flight route enrichment (primary) |
+| `flightaware` | FlightAware AeroAPI key for flight route enrichment (fallback) |
+| `squawk_monitor` | Global emergency squawk monitoring (`interval` between scans) |
+| `retention` | Automatic cleanup of old data (`sightings_max_age`, `alerts_max_age`, `routes_max_age`) |
+
+### Command-Line Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-config` | `config.hcl` | Path to configuration file |
+| `-log-level` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP gRPC endpoint for trace export (e.g., `http://tempo:4317`). No-ops if not set or collector is unreachable. |
+| `OTEL_EXPORTER_OTLP_INSECURE` | Set to `true` for unencrypted gRPC connections |
 
 ## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /` | Web dashboard |
-| `GET /api/flights` | All current flights |
+| `GET /api/flights` | All current flights (degrades to empty array if Redis is unavailable) |
 | `GET /api/flights/{icao24}` | Flight detail with metadata and route |
 | `GET /api/aircraft/{icao24}` | Aircraft metadata |
 | `GET /api/routes/{callsign}` | Flight route |
-| `GET /api/squawk-alerts` | Recent emergency squawk alerts |
-| `GET /healthz` | Health check (JSON, per-component status) |
+| `GET /api/squawk-alerts` | Recent emergency squawk alerts (last 24h) |
+| `GET /healthz` | Health check with per-component status (JSON) |
 | `GET /metrics` | Prometheus metrics |
+
+### Health Check Response
+
+```json
+{
+  "status": "healthy",
+  "components": {
+    "redis": "ok",
+    "postgres": "ok"
+  }
+}
+```
+
+Status is `healthy` (all backends up), `degraded` (some backends down, 200), or `unhealthy` (all backends down, 503).
+
+## Observability
+
+The service exports three pillars of observability:
+
+### Metrics (Prometheus)
+
+Scraped via `GET /metrics`. Key metrics:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `poller_polls_total` | counter | Poll cycles by result (`ok`, `error`) |
+| `poller_poll_duration_seconds` | histogram | Poll cycle duration |
+| `poller_aircraft_count` | gauge | Aircraft seen in last poll |
+| `poller_enrich_queue` | gauge | Enrichment queue depth |
+| `apiclient_requests_total` | counter | API requests by `upstream` and `status` |
+| `apiclient_request_duration_seconds` | histogram | API request duration by `upstream` |
+
+Plus automatic HTTP server metrics from otelhttp and Redis metrics from redisotel.
+
+### Traces (OpenTelemetry)
+
+Exported via OTLP gRPC. Span hierarchy:
+
+- `poller.poll` — root span per poll cycle
+  - `opensky.request` — OpenSky API call
+  - `postgres.LogSighting` — sighting writes
+- `hexdb.request` / `opensky.request` — enrichment API calls
+  - `postgres.SaveAircraftMeta` — metadata writes
+- `squawk.scan` — root span per squawk scan
+- HTTP request spans — automatic via otelhttp middleware
+
+### Logs (slog JSON)
+
+Structured JSON to stdout. When a trace is active, `trace_id` and `span_id` are injected into every log line for correlation in Grafana.
+
+### Grafana Dashboard
+
+![Grafana Dashboard](docs/grafana.png)
+
+A pre-built dashboard is included at `grafana/flight-fetcher.json` with panels for:
+
+- Service overview (aircraft count, poll success rate, enrichment queue, API errors)
+- Poll cycle duration and rate
+- API client latency and error rate by upstream
+- HTTP server request duration and status codes
+- Recent traces (Tempo)
+- Application logs with log-to-trace correlation (Loki)
+- Error/warn log rate
+
+The dashboard includes a `Log Selector` variable to switch between `service_name="flight-fetcher"` (docker compose) and `task="flight-fetcher"` (Nomad production).
 
 ## Deployment
 
-Deploys as a Nomad job with Consul service discovery, Vault secret injection, and Traefik reverse proxy with OAuth2 authentication. The Docker image is a multi-stage Alpine build producing a minimal container running as a non-root user. A docker-compose environment is provided for local development with PostgreSQL and Redis.
+### Docker Compose (Development)
+
+`make run` starts the full stack including the observability stack:
+
+| Container | Purpose |
+|-----------|---------|
+| `flight-fetcher` | The application |
+| `postgres` | Persistent storage |
+| `redis` | Flight state cache |
+| `grafana` | Dashboards (port 13000) |
+| `prometheus` | Metrics (port 19090) |
+| `tempo` | Traces (port 13200, OTLP on 14317) |
+| `loki` | Logs (port 13100) |
+| `alloy` | Log collection from Docker containers |
+
+### Nomad (Production)
+
+Deploys as a Nomad job with Consul service discovery, Vault secret injection, and Traefik reverse proxy with OAuth2 authentication. The Docker image is a multi-stage Alpine build producing a minimal container running as a non-root user. An example Nomad job specification is included at `deploy/nomad.hcl`.
+
+Features: rolling updates with auto-revert, Consul health check on `/healthz`, OTel trace export to Tempo, and Prometheus scraping.
 
 ## Development
 
@@ -145,8 +276,11 @@ make lint                   # golangci-lint
 make test                   # unit tests with race detector and coverage
 make govulncheck            # Go vulnerability scanner
 make generate               # regenerate sqlc and mocks
-make run                    # run locally (requires config.hcl)
+make run                    # full stack with observability (requires config.hcl)
+make stop                   # stop the stack
+make clean                  # stop, remove volumes, remove binary
 make push                   # build and push multi-arch images to registry
+make release                # tag and push to trigger GitHub Release
 ```
 
 ## Project Structure
@@ -160,23 +294,32 @@ internal/
   apiclient/                # shared HTTP client with backoff and circuit breaking
     airlabs/                # AirLabs API client (route primary)
     flightaware/            # FlightAware AeroAPI client (route fallback)
-    hexdb/                  # HexDB.io API client (aircraft metadata)
-    opensky/                # OpenSky API client, OAuth2
+    hexdb/                  # HexDB.io API client (aircraft metadata primary)
+    opensky/                # OpenSky API client, OAuth2, metadata fallback
   config/                   # HCL config loading and validation
-  enricher/                 # aircraft metadata + route enrichment with fallback
+  enricher/                 # named source chains for metadata + route enrichment
   geo/                      # haversine distance, bbox calculation
   observe/                  # OpenTelemetry + Prometheus initialization
   poller/                   # polling loop with async enrichment worker pool
-  retention/                # data retention cleanup worker
+  retention/                # batched data retention cleanup worker
   route/                    # shared flight route domain type
   runloop/                  # shared ticker loop helper
-  server/                   # web dashboard (split-pane map, JSON API, metrics)
+  server/                   # web dashboard, JSON API, health check, metrics
   squawk/                   # global emergency squawk monitor
   store/
     redis.go                # current flight state (TTL-based, redisotel)
     postgres.go             # metadata, routes, sightings, squawk alerts
 deploy/
   Dockerfile                # multi-stage Alpine build, non-root user
+  nomad.hcl                 # example Nomad job specification
+  monitoring/               # observability stack configs for docker compose
+    tempo.yml               # Tempo trace collector
+    loki.yml                # Loki log aggregator
+    alloy.alloy             # Alloy log shipper (Docker container logs)
+    prometheus.yml           # Prometheus scrape config
+    grafana/                # Grafana provisioning (datasources, dashboards)
+grafana/
+  flight-fetcher.json       # pre-built Grafana dashboard
 ```
 
 ## License

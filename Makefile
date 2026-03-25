@@ -60,7 +60,14 @@ build: ## Build the flight-fetcher binary
 	CGO_ENABLED=0 go build -ldflags="$(GO_LDFLAGS)" -o flight-fetcher ./cmd/server
 
 run: ## Build and run the full stack via docker-compose (requires config.hcl)
-	docker compose up --build
+	docker compose up --build -d
+	@echo ""
+	@echo "  Dashboard:  http://localhost:8080"
+	@echo "  Grafana:    http://localhost:13000"
+	@echo "  Prometheus: http://localhost:19090"
+	@echo ""
+	@echo "  Logs: docker compose logs -f flight-fetcher"
+	@echo ""
 
 stop: ## Stop the docker-compose stack
 	docker compose down

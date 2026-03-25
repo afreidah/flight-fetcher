@@ -1,0 +1,463 @@
+{
+  "uid": "flight-fetcher",
+  "title": "Flight Fetcher",
+  "tags": ["flight-fetcher", "aviation"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "log_selector",
+        "type": "custom",
+        "label": "Log Selector",
+        "current": { "text": "service_name=\"flight-fetcher\"", "value": "service_name=\"flight-fetcher\"" },
+        "options": [
+          { "text": "service_name=\"flight-fetcher\"", "value": "service_name=\"flight-fetcher\"", "selected": true },
+          { "text": "task=\"flight-fetcher\"", "value": "task=\"flight-fetcher\"", "selected": false }
+        ],
+        "query": "service_name=\"flight-fetcher\",task=\"flight-fetcher\""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "id": 1,
+      "title": "Service Overview",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "id": 2,
+      "title": "Aircraft Tracked",
+      "gridPos": { "x": 0, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "poller_aircraft_count",
+          "legendFormat": "aircraft",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 3,
+      "title": "Poll Success Rate",
+      "gridPos": { "x": 4, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(poller_polls_total{result=\"ok\"}[5m]) / on() (rate(poller_polls_total[5m]) > 0) * 100",
+          "legendFormat": "success %",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 90, "color": "yellow" },
+              { "value": 99, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 4,
+      "title": "Enrichment Queue",
+      "gridPos": { "x": 8, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "poller_enrich_queue",
+          "legendFormat": "queued",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "green" },
+              { "value": 100, "color": "yellow" },
+              { "value": 400, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 5,
+      "title": "API Errors (5m)",
+      "gridPos": { "x": 12, "y": 1, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(apiclient_requests_total{status=~\"error|429|5..\"}[5m]))",
+          "legendFormat": "errors",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "green" },
+              { "value": 1, "color": "yellow" },
+              { "value": 10, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 6,
+      "title": "Aircraft Count Over Time",
+      "gridPos": { "x": 16, "y": 1, "w": 8, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "poller_aircraft_count",
+          "legendFormat": "aircraft"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "spanNulls": true
+          }
+        }
+      }
+    },
+    {
+      "type": "row",
+      "id": 10,
+      "title": "Poll Cycle",
+      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "id": 11,
+      "title": "Poll Duration",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(poller_poll_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(poller_poll_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(poller_poll_duration_seconds_bucket[5m]))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 12,
+      "title": "Poll Rate (success / error)",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(poller_polls_total{result=\"ok\"}[5m])",
+          "legendFormat": "success"
+        },
+        {
+          "expr": "rate(poller_polls_total{result=\"error\"}[5m])",
+          "legendFormat": "error"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "stacking": { "mode": "normal" }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "error" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "id": 20,
+      "title": "API Clients",
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "id": 21,
+      "title": "Request Duration by Upstream (p95)",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (upstream, le) (rate(apiclient_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{ upstream }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 22,
+      "title": "Request Rate by Upstream",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (upstream) (rate(apiclient_requests_total[5m]))",
+          "legendFormat": "{{ upstream }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 20, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 23,
+      "title": "Error Rate by Upstream",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (upstream) (rate(apiclient_requests_total{status=~\"error|429|5..\"}[5m]))",
+          "legendFormat": "{{ upstream }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 20, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "id": 24,
+      "title": "Request Status by Upstream",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (upstream, status) (increase(apiclient_requests_total[1h]))",
+          "legendFormat": "{{ upstream }} {{ status }}",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "renameByName": { "upstream": "Upstream", "status": "Status", "Value": "Count (1h)" }
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 30,
+      "title": "HTTP Server",
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "id": 31,
+      "title": "HTTP Request Duration (p95)",
+      "gridPos": { "x": 0, "y": 29, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job=\"flight-fetcher\"}[5m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 32,
+      "title": "HTTP Request Rate by Status",
+      "gridPos": { "x": 12, "y": 29, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count{job=\"flight-fetcher\"}[5m]))",
+          "legendFormat": "{{ http_response_status_code }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 20, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "type": "row",
+      "id": 40,
+      "title": "Traces",
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "type": "table",
+      "id": 41,
+      "title": "Recent Traces",
+      "gridPos": { "x": 0, "y": 37, "w": 24, "h": 8 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"flight-fetcher\"}",
+          "limit": 20,
+          "tableType": "traces"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 50,
+      "title": "Logs",
+      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+    {
+      "type": "logs",
+      "id": 51,
+      "title": "Application Logs",
+      "gridPos": { "x": 0, "y": 46, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{${log_selector}} | json | __error__=\"\" | line_format \"{{.level}} {{.msg}}\"",
+          "legendFormat": ""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "wrapLogMessage": false
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 52,
+      "title": "Error / Warn Log Rate",
+      "gridPos": { "x": 0, "y": 56, "w": 24, "h": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(rate({${log_selector}} | json | level=\"WARN\" [5m]))",
+          "legendFormat": "warn"
+        },
+        {
+          "expr": "sum(rate({${log_selector}} | json | level=\"ERROR\" [5m]))",
+          "legendFormat": "error"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 20, "lineWidth": 2 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "error" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "warn" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
+          }
+        ]
+      }
+    }
+  ]
+}
