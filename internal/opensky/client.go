@@ -4,8 +4,8 @@
 // Project: Flight Fetcher / Author: Alex Freidah
 //
 // HTTP client for the OpenSky Network REST API. Authenticates via OAuth2 client
-// credentials flow, caches the access token until expiry, and applies
-// exponential backoff on HTTP 429 rate limit responses.
+// credentials flow, caches the access token until expiry. Rate limiting and
+// exponential backoff are handled by the embedded apiclient.Client.
 // -------------------------------------------------------------------------------
 
 package opensky
@@ -21,18 +21,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/apiclient"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 )
 
 // -------------------------------------------------------------------------
 // CONSTANTS
 // -------------------------------------------------------------------------
-
-const (
-	initialBackoff = 30 * time.Second
-	maxBackoff     = 10 * time.Minute
-	backoffFactor  = 2
-)
 
 // defaultTokenURL is the OpenSky OAuth2 token endpoint.
 const defaultTokenURL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
@@ -43,15 +38,10 @@ const defaultTokenURL = "https://auth.opensky-network.org/auth/realms/opensky-ne
 
 // Client communicates with the OpenSky Network API.
 type Client struct {
-	httpClient   *http.Client
+	*apiclient.Client
 	clientID     string
 	clientSecret string
-	baseURL      string
 	tokenURL     string
-
-	mu          sync.Mutex
-	backoffUtil time.Time
-	backoff     time.Duration
 
 	tokenMu     sync.Mutex
 	token       string
@@ -71,12 +61,14 @@ type tokenResponse struct {
 // NewClient creates an OpenSky API client with the given OAuth2 client credentials.
 func NewClient(clientID, clientSecret string) *Client {
 	return &Client{
-		httpClient:   &http.Client{Timeout: 15 * time.Second},
+		Client: apiclient.New(apiclient.Options{
+			BaseURL:      "https://opensky-network.org/api",
+			Timeout:      15 * time.Second,
+			MaxBodyBytes: 50 * 1024 * 1024, // 50MB for global queries
+		}),
 		clientID:     clientID,
 		clientSecret: clientSecret,
-		baseURL:      "https://opensky-network.org/api",
 		tokenURL:     defaultTokenURL,
-		backoff:      initialBackoff,
 	}
 }
 
@@ -85,16 +77,12 @@ func NewClient(clientID, clientSecret string) *Client {
 // Returns a rate limit error without making a request if the client is in
 // a backoff period.
 func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse, error) {
-	if err := c.checkBackoff(ctx); err != nil {
-		return nil, err
-	}
+	path := fmt.Sprintf("/states/all?lamin=%f&lomin=%f&lamax=%f&lomax=%f",
+		bbox.MinLat, bbox.MinLon, bbox.MaxLat, bbox.MaxLon)
 
-	reqURL := fmt.Sprintf("%s/states/all?lamin=%f&lomin=%f&lamax=%f&lomax=%f",
-		c.baseURL, bbox.MinLat, bbox.MinLon, bbox.MaxLat, bbox.MaxLon)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, err
 	}
 
 	if c.clientID != "" {
@@ -107,29 +95,22 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 		}
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		c.applyBackoff(ctx)
-		return nil, fmt.Errorf("rate limited (429), backing off for %s", c.currentBackoff())
-	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	c.resetBackoff()
-
 	var raw struct {
 		Time   int64             `json:"time"`
 		States []json.RawMessage `json:"states"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+	if err := c.DecodeJSON(resp.Body, &raw); err != nil {
+		return nil, err
 	}
 
 	result := &StatesResponse{Time: raw.Time, States: make([]StateVector, 0, len(raw.States))}
@@ -152,7 +133,8 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 
 // getToken returns a cached OAuth2 access token, refreshing it if expired.
 // Uses a dedicated mutex so only one goroutine refreshes at a time while
-// the backoff mutex remains unblocked.
+// the backoff mutex remains unblocked. Uses DoRaw to avoid participating
+// in the main API's backoff state.
 func (c *Client) getToken(ctx context.Context) (string, error) {
 	c.tokenMu.Lock()
 	defer c.tokenMu.Unlock()
@@ -175,7 +157,7 @@ func (c *Client) getToken(ctx context.Context) (string, error) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.DoRaw(req)
 	if err != nil {
 		return "", fmt.Errorf("executing token request: %w", err)
 	}
@@ -186,8 +168,8 @@ func (c *Client) getToken(ctx context.Context) (string, error) {
 	}
 
 	var tr tokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
-		return "", fmt.Errorf("decoding token response: %w", err)
+	if err := c.DecodeJSON(resp.Body, &tr); err != nil {
+		return "", err
 	}
 
 	c.token = tr.AccessToken
@@ -197,52 +179,4 @@ func (c *Client) getToken(ctx context.Context) (string, error) {
 		slog.Int("expires_in_sec", tr.ExpiresIn))
 
 	return tr.AccessToken, nil
-}
-
-// checkBackoff returns an error if the client is currently in a backoff
-// period, skipping the request entirely.
-func (c *Client) checkBackoff(ctx context.Context) error {
-	c.mu.Lock()
-	until := c.backoffUtil
-	c.mu.Unlock()
-
-	if time.Now().Before(until) {
-		remaining := time.Until(until).Truncate(time.Second)
-		slog.InfoContext(ctx, "skipping request during backoff",
-			slog.String("remaining", remaining.String()))
-		return fmt.Errorf("rate limited, backoff expires in %s", remaining)
-	}
-	return nil
-}
-
-// applyBackoff doubles the backoff duration (up to maxBackoff) and sets the
-// next allowed request time.
-func (c *Client) applyBackoff(ctx context.Context) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.backoffUtil = time.Now().Add(c.backoff)
-	slog.WarnContext(ctx, "rate limited, applying backoff",
-		slog.String("duration", c.backoff.String()))
-
-	c.backoff *= backoffFactor
-	if c.backoff > maxBackoff {
-		c.backoff = maxBackoff
-	}
-}
-
-// resetBackoff clears the backoff state after a successful request.
-func (c *Client) resetBackoff() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.backoff = initialBackoff
-	c.backoffUtil = time.Time{}
-}
-
-// currentBackoff returns the current backoff duration for logging.
-func (c *Client) currentBackoff() time.Duration {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.backoff
 }

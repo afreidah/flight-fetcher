@@ -100,12 +100,23 @@ func New(opts *Options) *Server {
 // ListenAndServe starts the HTTP server on the given address. Blocks until
 // the context is cancelled, then shuts down gracefully.
 func (s *Server) ListenAndServe(ctx context.Context, addr string) {
-	srv := &http.Server{Addr: addr, Handler: s.mux}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           s.mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	go func() {
 		<-ctx.Done()
 		slog.InfoContext(ctx, "dashboard shutting down")
-		srv.Close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.ErrorContext(ctx, "dashboard shutdown error", slog.String("error", err.Error()))
+		}
 	}()
 
 	slog.InfoContext(ctx, "dashboard listening", slog.String("addr", addr))

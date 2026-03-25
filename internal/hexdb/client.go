@@ -12,11 +12,11 @@ package hexdb
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
+
+	"github.com/afreidah/flight-fetcher/internal/apiclient"
 )
 
 // -------------------------------------------------------------------------
@@ -25,8 +25,7 @@ import (
 
 // Client communicates with the HexDB.io API.
 type Client struct {
-	httpClient *http.Client
-	baseURL    string
+	*apiclient.Client
 }
 
 // -------------------------------------------------------------------------
@@ -36,24 +35,23 @@ type Client struct {
 // NewClient creates a HexDB.io API client.
 func NewClient() *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		baseURL:    "https://hexdb.io/api/v1",
+		Client: apiclient.New(apiclient.Options{
+			BaseURL: "https://hexdb.io/api/v1",
+		}),
 	}
 }
 
 // Lookup fetches aircraft metadata by ICAO24 hex code. Returns nil if the
 // aircraft is not found in HexDB.
 func (c *Client) Lookup(ctx context.Context, icao24 string) (*AircraftInfo, error) {
-	reqURL := fmt.Sprintf("%s/aircraft/%s", c.baseURL, url.PathEscape(icao24))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := c.NewRequest(ctx, http.MethodGet, "/aircraft/"+url.PathEscape(icao24), nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -65,8 +63,8 @@ func (c *Client) Lookup(ctx context.Context, icao24 string) (*AircraftInfo, erro
 	}
 
 	var info AircraftInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+	if err := c.DecodeJSON(resp.Body, &info); err != nil {
+		return nil, err
 	}
 	info.ICAO24 = icao24
 	return &info, nil
