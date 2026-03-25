@@ -13,8 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
+	opensky "github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	geo "github.com/afreidah/flight-fetcher/internal/geo"
-	opensky "github.com/afreidah/flight-fetcher/internal/opensky"
 	gomock "go.uber.org/mock/gomock"
 )
 
