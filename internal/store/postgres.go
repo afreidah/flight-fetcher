@@ -25,6 +25,7 @@ import (
 	db "github.com/afreidah/flight-fetcher/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -104,6 +105,27 @@ func (p *PostgresStore) startSpan(ctx context.Context, name string) (context.Con
 	}
 }
 
+// traced wraps a database operation in a tracing span, recording any
+// non-nil error. Used for read and delete methods that return (T, error).
+func traced[T any](p *PostgresStore, ctx context.Context, name string, fn func(context.Context) (T, error)) (T, error) {
+	ctx, endSpan := p.startSpan(ctx, name)
+	result, err := fn(ctx)
+	endSpan(err)
+	return result, err
+}
+
+// deleteOlderThan wraps a batched delete query in a tracing span,
+// converting the CommandTag result to a row count.
+func deleteOlderThan(p *PostgresStore, ctx context.Context, name string, maxAge time.Duration, fn func(context.Context, pgtype.Timestamptz) (pgconn.CommandTag, error)) (int64, error) {
+	return traced(p, ctx, name, func(ctx context.Context) (int64, error) {
+		result, err := fn(ctx, pgtype.Timestamptz{Time: time.Now().UTC().Add(-maxAge), Valid: true})
+		if err != nil {
+			return 0, err
+		}
+		return result.RowsAffected(), nil
+	})
+}
+
 // SaveAircraftMeta caches aircraft metadata, upserting by ICAO24.
 func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *aircraft.Info) error {
 	ctx, endSpan := p.startSpan(ctx, "SaveAircraftMeta")
@@ -121,20 +143,22 @@ func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *aircraft.Inf
 // GetAircraftMeta retrieves cached aircraft metadata by ICAO24. Returns nil
 // if the aircraft has not been enriched yet.
 func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error) {
-	row, err := p.queries.GetAircraftMeta(ctx, icao24)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &aircraft.Info{
-		ICAO24:           row.Icao24,
-		Registration:     row.Registration,
-		ManufacturerName: row.Manufacturer,
-		Type:             row.Type,
-		OperatorFlagCode: row.Operator,
-	}, nil
+	return traced(p, ctx, "GetAircraftMeta", func(ctx context.Context) (*aircraft.Info, error) {
+		row, err := p.queries.GetAircraftMeta(ctx, icao24)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &aircraft.Info{
+			ICAO24:           row.Icao24,
+			Registration:     row.Registration,
+			ManufacturerName: row.Manufacturer,
+			Type:             row.Type,
+			OperatorFlagCode: row.Operator,
+		}, nil
+	})
 }
 
 // LogSighting records a historical sighting of an aircraft at a given
@@ -174,34 +198,38 @@ func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *route.Info) 
 // GetFlightRoute retrieves cached route information by callsign. Returns nil
 // if the route has not been looked up yet or the cached entry is stale.
 func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error) {
-	row, err := p.queries.GetFlightRoute(ctx, db.GetFlightRouteParams{
-		Callsign: callsign,
-		CachedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.routeTTL), Valid: true},
+	return traced(p, ctx, "GetFlightRoute", func(ctx context.Context) (*route.Info, error) {
+		row, err := p.queries.GetFlightRoute(ctx, db.GetFlightRouteParams{
+			Callsign: callsign,
+			CachedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.routeTTL), Valid: true},
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &route.Info{
+			FlightICAO: row.Callsign,
+			DepIATA:    row.DepIata,
+			DepICAO:    row.DepIcao,
+			DepName:    row.DepName,
+			ArrIATA:    row.ArrIata,
+			ArrICAO:    row.ArrIcao,
+			ArrName:    row.ArrName,
+		}, nil
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &route.Info{
-		FlightICAO: row.Callsign,
-		DepIATA:    row.DepIata,
-		DepICAO:    row.DepIcao,
-		DepName:    row.DepName,
-		ArrIATA:    row.ArrIata,
-		ArrICAO:    row.ArrIcao,
-		ArrName:    row.ArrName,
-	}, nil
 }
 
 // HasRecentSquawkAlert checks if an alert for the given icao24 and squawk
 // code exists within the cooldown window.
 func (p *PostgresStore) HasRecentSquawkAlert(ctx context.Context, icao24, squawk string, cooldown time.Duration) (bool, error) {
-	return p.queries.HasRecentSquawkAlert(ctx, db.HasRecentSquawkAlertParams{
-		Icao24: icao24,
-		Squawk: squawk,
-		SeenAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-cooldown), Valid: true},
+	return traced(p, ctx, "HasRecentSquawkAlert", func(ctx context.Context) (bool, error) {
+		return p.queries.HasRecentSquawkAlert(ctx, db.HasRecentSquawkAlertParams{
+			Icao24: icao24,
+			Squawk: squawk,
+			SeenAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-cooldown), Valid: true},
+		})
 	})
 }
 
@@ -225,70 +253,54 @@ func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign,
 
 // GetRecentSquawkAlerts returns squawk alerts from the last given duration.
 func (p *PostgresStore) GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error) {
-	rows, err := p.queries.GetRecentSquawkAlerts(ctx, pgtype.Timestamptz{
-		Time:  time.Now().UTC().Add(-since),
-		Valid: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	alerts := make([]squawk.Alert, len(rows))
-	for i, r := range rows {
-		alerts[i] = squawk.Alert{
-			ID:       r.ID,
-			ICAO24:   r.Icao24,
-			Callsign: r.Callsign,
-			Squawk:   r.Squawk,
-			Lat:      r.Lat,
-			Lon:      r.Lon,
-			SeenAt:   r.SeenAt.Time,
+	return traced(p, ctx, "GetRecentSquawkAlerts", func(ctx context.Context) ([]squawk.Alert, error) {
+		rows, err := p.queries.GetRecentSquawkAlerts(ctx, pgtype.Timestamptz{
+			Time:  time.Now().UTC().Add(-since),
+			Valid: true,
+		})
+		if err != nil {
+			return nil, err
 		}
-	}
-	return alerts, nil
+		alerts := make([]squawk.Alert, len(rows))
+		for i, r := range rows {
+			alerts[i] = squawk.Alert{
+				ID:       r.ID,
+				ICAO24:   r.Icao24,
+				Callsign: r.Callsign,
+				Squawk:   r.Squawk,
+				Lat:      r.Lat,
+				Lon:      r.Lon,
+				SeenAt:   r.SeenAt.Time,
+			}
+		}
+		return alerts, nil
+	})
 }
 
 // DeleteOldSightings removes sightings older than the given duration.
 // Returns the number of rows deleted.
 func (p *PostgresStore) DeleteOldSightings(ctx context.Context, maxAge time.Duration) (int64, error) {
-	result, err := p.queries.DeleteOldSightings(ctx, pgtype.Timestamptz{
-		Time:  time.Now().UTC().Add(-maxAge),
-		Valid: true,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	return deleteOlderThan(p, ctx, "DeleteOldSightings", maxAge, p.queries.DeleteOldSightings)
 }
 
 // DeleteOldSquawkAlerts removes squawk alerts older than the given duration.
 // Returns the number of rows deleted.
 func (p *PostgresStore) DeleteOldSquawkAlerts(ctx context.Context, maxAge time.Duration) (int64, error) {
-	result, err := p.queries.DeleteOldSquawkAlerts(ctx, pgtype.Timestamptz{
-		Time:  time.Now().UTC().Add(-maxAge),
-		Valid: true,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	return deleteOlderThan(p, ctx, "DeleteOldSquawkAlerts", maxAge, p.queries.DeleteOldSquawkAlerts)
 }
 
 // DeleteOldRoutes removes cached routes older than the given duration.
 // Returns the number of rows deleted.
 func (p *PostgresStore) DeleteOldRoutes(ctx context.Context, maxAge time.Duration) (int64, error) {
-	result, err := p.queries.DeleteOldRoutes(ctx, pgtype.Timestamptz{
-		Time:  time.Now().UTC().Add(-maxAge),
-		Valid: true,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	return deleteOlderThan(p, ctx, "DeleteOldRoutes", maxAge, p.queries.DeleteOldRoutes)
 }
 
 // Ping verifies the PostgreSQL connection is alive.
 func (p *PostgresStore) Ping(ctx context.Context) error {
-	return p.pool.Ping(ctx)
+	ctx, endSpan := p.startSpan(ctx, "Ping")
+	err := p.pool.Ping(ctx)
+	endSpan(err)
+	return err
 }
 
 // Close shuts down the PostgreSQL connection pool.

@@ -12,6 +12,7 @@ package observe
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -69,13 +70,7 @@ func Setup(ctx context.Context, serviceName, version string) (shutdown func(cont
 	otel.SetMeterProvider(mp)
 
 	shutdown = func(ctx context.Context) error {
-		if err := tp.Shutdown(ctx); err != nil {
-			return fmt.Errorf("shutting down tracer: %w", err)
-		}
-		if err := mp.Shutdown(ctx); err != nil {
-			return fmt.Errorf("shutting down meter: %w", err)
-		}
-		return nil
+		return errors.Join(tp.Shutdown(ctx), mp.Shutdown(ctx))
 	}
 	return shutdown, nil
 }
