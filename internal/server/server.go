@@ -49,9 +49,10 @@ type SquawkAlertReader interface {
 	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error)
 }
 
-// HealthPinger checks if a backend dependency is reachable.
-type HealthPinger interface {
-	Ping(ctx context.Context) error
+// HealthPinger checks if a named backend dependency is reachable.
+type HealthPinger struct {
+	Name   string
+	Pinger interface{ Ping(ctx context.Context) error }
 }
 
 // -------------------------------------------------------------------------
@@ -145,14 +146,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleListFlights returns all current flights as JSON.
+// handleListFlights returns all current flights as JSON. Returns an empty
+// array instead of 500 when Redis is unavailable so the dashboard degrades
+// gracefully rather than failing entirely.
 func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
 	flights, err := s.opts.Flights.GetAllFlights(r.Context())
 	if err != nil {
-		http.Error(w, "failed to list flights", http.StatusInternalServerError)
-		slog.WarnContext(r.Context(), "api: list flights failed",
+		slog.WarnContext(r.Context(), "api: list flights failed, returning empty",
 			slog.String("error", err.Error()))
-		return
+		flights = []opensky.StateVector{}
 	}
 	writeJSON(r.Context(), w, flights)
 }
@@ -255,22 +257,44 @@ func (s *Server) handleGetRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(r.Context(), w, route)
 }
 
+// healthResponse is returned by the /healthz endpoint.
+type healthResponse struct {
+	Status     string            `json:"status"`
+	Components map[string]string `json:"components"`
+}
+
 // handleHealthz checks all registered backend dependencies and returns
-// 200 if all are reachable, 503 if any fail.
+// JSON with per-component status. Returns 200 for healthy or degraded,
+// 503 only if all components are unreachable.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	result := healthResponse{
+		Status:     "healthy",
+		Components: make(map[string]string, len(s.opts.Pingers)),
+	}
+
+	failures := 0
 	for _, p := range s.opts.Pingers {
-		if err := p.Ping(ctx); err != nil {
-			http.Error(w, "unhealthy", http.StatusServiceUnavailable)
+		if err := p.Pinger.Ping(ctx); err != nil {
+			result.Components[p.Name] = err.Error()
+			failures++
 			slog.WarnContext(r.Context(), "health check failed",
+				slog.String("component", p.Name),
 				slog.String("error", err.Error()))
-			return
+		} else {
+			result.Components[p.Name] = "ok"
 		}
 	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
+
+	if failures > 0 && failures < len(s.opts.Pingers) {
+		result.Status = "degraded"
+	} else if failures == len(s.opts.Pingers) && len(s.opts.Pingers) > 0 {
+		result.Status = "unhealthy"
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	writeJSON(r.Context(), w, result)
 }
 
 // writeJSON encodes v as JSON and writes it to w.

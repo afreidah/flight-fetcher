@@ -127,7 +127,10 @@ func main() {
 			Aircraft:   pgStore,
 			Routes:     pgStore,
 			Alerts:     pgStore,
-			Pingers:    []server.HealthPinger{redisStore, pgStore},
+			Pingers: []server.HealthPinger{
+				{Name: "redis", Pinger: redisStore},
+				{Name: "postgres", Pinger: pgStore},
+			},
 			Version:    Version,
 			RefreshSec: cfg.Server.RefreshSeconds(),
 		})

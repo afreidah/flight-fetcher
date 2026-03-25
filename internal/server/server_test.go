@@ -137,7 +137,7 @@ func TestHandleListFlights_Success(t *testing.T) {
 	}
 }
 
-// TestHandleListFlights_Error verifies that a store error returns 500.
+// TestHandleListFlights_Error verifies that a store error degrades to an empty array instead of 500.
 func TestHandleListFlights_Error(t *testing.T) {
 	srv := New(&Options{Flights: &stubFlightLister{err: errors.New("redis down")}, Aircraft: &stubMetaReader{}, Version: "test", RefreshSec: 5})
 	req := httptest.NewRequest(http.MethodGet, "/api/flights", nil)
@@ -145,8 +145,15 @@ func TestHandleListFlights_Error(t *testing.T) {
 
 	srv.mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d (should degrade gracefully)", w.Code, http.StatusOK)
+	}
+	var got []opensky.StateVector
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(flights) = %d, want 0 on error", len(got))
 	}
 }
 
@@ -463,13 +470,16 @@ func TestHandleGetAircraft_Sentinel(t *testing.T) {
 	}
 }
 
-// TestHandleHealthz_Healthy verifies that healthy pingers return 200.
+// TestHandleHealthz_Healthy verifies that all-healthy pingers return 200 with status "healthy".
 func TestHandleHealthz_Healthy(t *testing.T) {
 	srv := New(&Options{
 		Flights:  &stubFlightLister{},
 		Aircraft: &stubMetaReader{},
-		Pingers:  []HealthPinger{&stubPinger{}, &stubPinger{}},
-		Version:  "test",
+		Pingers: []HealthPinger{
+			{Name: "redis", Pinger: &stubPinger{}},
+			{Name: "postgres", Pinger: &stubPinger{}},
+		},
+		Version: "test",
 	})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -479,18 +489,62 @@ func TestHandleHealthz_Healthy(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
-	if w.Body.String() != "ok" {
-		t.Errorf("body = %q, want %q", w.Body.String(), "ok")
+	var got healthResponse
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if got.Status != "healthy" {
+		t.Errorf("status = %q, want %q", got.Status, "healthy")
+	}
+	if got.Components["redis"] != "ok" {
+		t.Errorf("redis = %q, want %q", got.Components["redis"], "ok")
 	}
 }
 
-// TestHandleHealthz_Unhealthy verifies that a failing pinger returns 503.
+// TestHandleHealthz_Degraded verifies that one failing pinger returns 200 with status "degraded".
+func TestHandleHealthz_Degraded(t *testing.T) {
+	srv := New(&Options{
+		Flights:  &stubFlightLister{},
+		Aircraft: &stubMetaReader{},
+		Pingers: []HealthPinger{
+			{Name: "redis", Pinger: &stubPinger{}},
+			{Name: "postgres", Pinger: &stubPinger{err: errors.New("pg down")}},
+		},
+		Version: "test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d (degraded should be 200)", w.Code, http.StatusOK)
+	}
+	var got healthResponse
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if got.Status != "degraded" {
+		t.Errorf("status = %q, want %q", got.Status, "degraded")
+	}
+	if got.Components["redis"] != "ok" {
+		t.Errorf("redis = %q, want %q", got.Components["redis"], "ok")
+	}
+	if got.Components["postgres"] != "pg down" {
+		t.Errorf("postgres = %q, want %q", got.Components["postgres"], "pg down")
+	}
+}
+
+// TestHandleHealthz_Unhealthy verifies that all-failing pingers return 503.
 func TestHandleHealthz_Unhealthy(t *testing.T) {
 	srv := New(&Options{
 		Flights:  &stubFlightLister{},
 		Aircraft: &stubMetaReader{},
-		Pingers:  []HealthPinger{&stubPinger{}, &stubPinger{err: errors.New("pg down")}},
-		Version:  "test",
+		Pingers: []HealthPinger{
+			{Name: "redis", Pinger: &stubPinger{err: errors.New("redis down")}},
+			{Name: "postgres", Pinger: &stubPinger{err: errors.New("pg down")}},
+		},
+		Version: "test",
 	})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -500,9 +554,16 @@ func TestHandleHealthz_Unhealthy(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 	}
+	var got healthResponse
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if got.Status != "unhealthy" {
+		t.Errorf("status = %q, want %q", got.Status, "unhealthy")
+	}
 }
 
-// TestHandleHealthz_NoPingers verifies that no pingers returns 200.
+// TestHandleHealthz_NoPingers verifies that no pingers returns 200 with status "healthy".
 func TestHandleHealthz_NoPingers(t *testing.T) {
 	srv := New(&Options{
 		Flights:  &stubFlightLister{},
