@@ -156,16 +156,16 @@ cmd/
     main.go                 # entrypoint, config, signal handling, errgroup
 internal/
   aircraft/                 # shared aircraft metadata domain type
-  airlabs/                  # AirLabs API client (route primary)
   apiclient/                # shared HTTP client with backoff and circuit breaking
-  config/config.go          # HCL config loading and validation
-  enricher/enricher.go      # aircraft metadata + route enrichment with fallback
-  flightaware/              # FlightAware AeroAPI client (route fallback)
-  geo/geo.go                # haversine distance, bbox calculation
-  hexdb/                    # HexDB.io API client
+    airlabs/                # AirLabs API client (route primary)
+    flightaware/            # FlightAware AeroAPI client (route fallback)
+    hexdb/                  # HexDB.io API client (aircraft metadata)
+    opensky/                # OpenSky API client, OAuth2
+  config/                   # HCL config loading and validation
+  enricher/                 # aircraft metadata + route enrichment with fallback
+  geo/                      # haversine distance, bbox calculation
   observe/                  # OpenTelemetry + Prometheus initialization
-  opensky/                  # OpenSky API client, OAuth2
-  poller/poller.go          # polling loop with async enrichment worker pool
+  poller/                   # polling loop with async enrichment worker pool
   retention/                # data retention cleanup worker
   route/                    # shared flight route domain type
   runloop/                  # shared ticker loop helper
