@@ -16,10 +16,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/apiclient"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 )
+
+// testClient creates a Client pointed at the given test server with no auth.
+func testClient(srv *httptest.Server) *Client {
+	return &Client{
+		Client: apiclient.New(apiclient.Options{
+			BaseURL:      srv.URL,
+			MaxBodyBytes: 50 * 1024 * 1024,
+		}),
+	}
+}
 
 // TestUnmarshalStateVector_Valid verifies that a complete state vector array is decoded correctly.
 func TestUnmarshalStateVector_Valid(t *testing.T) {
@@ -148,7 +158,9 @@ func TestGetStates_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, clientID: "test", clientSecret: "secret"}
+	c := testClient(srv)
+	c.clientID = "test"
+	c.clientSecret = "secret"
 	resp, err := c.GetStates(context.Background(), geo.BBox{MinLat: 33, MaxLat: 35, MinLon: -119, MaxLon: -117})
 	if err != nil {
 		t.Fatalf("GetStates() error = %v", err)
@@ -179,7 +191,7 @@ func TestGetStates_SkipsMalformed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	resp, err := c.GetStates(context.Background(), geo.BBox{})
 	if err != nil {
 		t.Fatalf("GetStates() error = %v", err)
@@ -209,7 +221,7 @@ func TestGetStates_RateLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, backoff: initialBackoff}
+	c := testClient(srv)
 
 	// First call gets 429
 	_, err := c.GetStates(context.Background(), geo.BBox{})
@@ -227,29 +239,6 @@ func TestGetStates_RateLimit(t *testing.T) {
 	}
 }
 
-// TestGetStates_BackoffResetsOnSuccess verifies that backoff resets after a successful request.
-func TestGetStates_BackoffResetsOnSuccess(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"time": 1234, "states": null}`))
-	}))
-	defer srv.Close()
-
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, backoff: 5 * time.Minute}
-
-	// Simulate prior backoff state
-	c.backoff = 5 * time.Minute
-
-	// Successful request should reset
-	_, err := c.GetStates(context.Background(), geo.BBox{})
-	if err != nil {
-		t.Fatalf("GetStates() error = %v", err)
-	}
-	if c.backoff != initialBackoff {
-		t.Errorf("backoff = %v, want %v after successful request", c.backoff, initialBackoff)
-	}
-}
-
 // TestGetStates_ServerError verifies that a non-200 response returns an error.
 func TestGetStates_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +246,7 @@ func TestGetStates_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	_, err := c.GetStates(context.Background(), geo.BBox{})
 	if err == nil {
 		t.Error("GetStates() expected error for 503 response, got nil")
@@ -272,7 +261,7 @@ func TestGetStates_InvalidJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	_, err := c.GetStates(context.Background(), geo.BBox{})
 	if err == nil {
 		t.Error("GetStates() expected error for invalid JSON, got nil")
@@ -287,7 +276,7 @@ func TestGetStates_EmptyStates(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	resp, err := c.GetStates(context.Background(), geo.BBox{})
 	if err != nil {
 		t.Fatalf("GetStates() error = %v", err)
@@ -326,7 +315,11 @@ func TestGetStates_SetsBearerToken(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL, tokenURL: srv.URL + "/token", clientID: "my-client", clientSecret: "my-secret", backoff: initialBackoff}
+	c := testClient(srv)
+	c.clientID = "my-client"
+	c.clientSecret = "my-secret"
+	c.tokenURL = srv.URL + "/token"
+
 	_, err := c.GetStates(context.Background(), geo.BBox{})
 	if err != nil {
 		t.Fatalf("GetStates() error = %v", err)

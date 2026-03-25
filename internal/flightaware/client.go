@@ -12,13 +12,12 @@ package flightaware
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/apiclient"
 	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
@@ -28,9 +27,8 @@ import (
 
 // Client communicates with the FlightAware AeroAPI.
 type Client struct {
-	httpClient *http.Client
-	apiKey     string
-	baseURL    string
+	*apiclient.Client
+	apiKey string
 }
 
 // -------------------------------------------------------------------------
@@ -40,14 +38,15 @@ type Client struct {
 // NewClient creates a FlightAware AeroAPI client with the given API key.
 func NewClient(apiKey string) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		apiKey:     apiKey,
-		baseURL:    "https://aeroapi.flightaware.com/aeroapi",
+		Client: apiclient.New(apiclient.Options{
+			BaseURL: "https://aeroapi.flightaware.com/aeroapi",
+		}),
+		apiKey: apiKey,
 	}
 }
 
 // LookupRoute fetches route information for a flight by callsign (ident).
-// Returns an route.Info for compatibility with the existing enricher
+// Returns a route.Info for compatibility with the existing enricher
 // interface. Returns nil if the flight is not found.
 func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info, error) {
 	callsign = strings.TrimSpace(callsign)
@@ -55,17 +54,15 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info,
 		return nil, nil
 	}
 
-	reqURL := fmt.Sprintf("%s/flights/%s", c.baseURL, url.PathEscape(callsign))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := c.NewRequest(ctx, http.MethodGet, "/flights/"+url.PathEscape(callsign), nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, err
 	}
 	req.Header.Set("x-apikey", c.apiKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -77,8 +74,8 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info,
 	}
 
 	var result flightsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+	if err := c.DecodeJSON(resp.Body, &result); err != nil {
+		return nil, err
 	}
 
 	if len(result.Flights) == 0 {

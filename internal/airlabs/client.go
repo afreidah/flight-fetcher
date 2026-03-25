@@ -12,13 +12,12 @@ package airlabs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/apiclient"
 	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
@@ -28,9 +27,8 @@ import (
 
 // Client communicates with the AirLabs API.
 type Client struct {
-	httpClient *http.Client
-	apiKey     string
-	baseURL    string
+	*apiclient.Client
+	apiKey string
 }
 
 // apiResponse wraps the AirLabs JSON response envelope.
@@ -45,9 +43,10 @@ type apiResponse struct {
 // NewClient creates an AirLabs API client with the given API key.
 func NewClient(apiKey string) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		apiKey:     apiKey,
-		baseURL:    "https://airlabs.co/api/v9",
+		Client: apiclient.New(apiclient.Options{
+			BaseURL: "https://airlabs.co/api/v9",
+		}),
+		apiKey: apiKey,
 	}
 }
 
@@ -63,16 +62,14 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info,
 		"flight_icao": {callsign},
 		"api_key":     {c.apiKey},
 	}
-	reqURL := fmt.Sprintf("%s/flight?%s", c.baseURL, params.Encode())
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := c.NewRequest(ctx, http.MethodGet, "/flight?"+params.Encode(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -81,8 +78,8 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info,
 	}
 
 	var result apiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+	if err := c.DecodeJSON(resp.Body, &result); err != nil {
+		return nil, err
 	}
 
 	// Empty response when flight not found

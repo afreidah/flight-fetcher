@@ -14,7 +14,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/afreidah/flight-fetcher/internal/apiclient"
 )
+
+// testClient creates a Client pointed at the given test server.
+func testClient(srv *httptest.Server) *Client {
+	return &Client{Client: apiclient.New(apiclient.Options{BaseURL: srv.URL})}
+}
 
 // TestLookup_Success verifies that a valid HexDB response is decoded correctly.
 func TestLookup_Success(t *testing.T) {
@@ -32,7 +39,7 @@ func TestLookup_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	info, err := c.Lookup(context.Background(), "abc123")
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
@@ -64,7 +71,7 @@ func TestLookup_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	info, err := c.Lookup(context.Background(), "unknown")
 	if err != nil {
 		t.Fatalf("Lookup() error = %v", err)
@@ -81,7 +88,7 @@ func TestLookup_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	_, err := c.Lookup(context.Background(), "abc123")
 	if err == nil {
 		t.Error("Lookup() expected error for 500 response, got nil")
@@ -96,7 +103,7 @@ func TestLookup_InvalidJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), baseURL: srv.URL}
+	c := testClient(srv)
 	_, err := c.Lookup(context.Background(), "abc123")
 	if err == nil {
 		t.Error("Lookup() expected error for invalid JSON, got nil")

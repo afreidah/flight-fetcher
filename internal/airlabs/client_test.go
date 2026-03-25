@@ -14,7 +14,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/afreidah/flight-fetcher/internal/apiclient"
 )
+
+// testClient creates a Client pointed at the given test server.
+func testClient(srv *httptest.Server, apiKey string) *Client {
+	return &Client{
+		Client: apiclient.New(apiclient.Options{BaseURL: srv.URL}),
+		apiKey: apiKey,
+	}
+}
 
 // TestLookupRoute_Success verifies that a valid response is decoded correctly.
 func TestLookupRoute_Success(t *testing.T) {
@@ -41,7 +51,7 @@ func TestLookupRoute_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), apiKey: "test-key", baseURL: srv.URL}
+	c := testClient(srv, "test-key")
 	route, err := c.LookupRoute(context.Background(), "AAL2079")
 	if err != nil {
 		t.Fatalf("LookupRoute() error = %v", err)
@@ -89,7 +99,7 @@ func TestLookupRoute_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), apiKey: "test-key", baseURL: srv.URL}
+	c := testClient(srv, "test-key")
 	route, err := c.LookupRoute(context.Background(), "UNKNOWN")
 	if err != nil {
 		t.Fatalf("LookupRoute() error = %v", err)
@@ -106,7 +116,7 @@ func TestLookupRoute_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), apiKey: "test-key", baseURL: srv.URL}
+	c := testClient(srv, "test-key")
 	_, err := c.LookupRoute(context.Background(), "AAL2079")
 	if err == nil {
 		t.Error("LookupRoute() expected error for 500 response, got nil")
@@ -121,7 +131,7 @@ func TestLookupRoute_InvalidJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{httpClient: srv.Client(), apiKey: "test-key", baseURL: srv.URL}
+	c := testClient(srv, "test-key")
 	_, err := c.LookupRoute(context.Background(), "AAL2079")
 	if err == nil {
 		t.Error("LookupRoute() expected error for invalid JSON, got nil")
