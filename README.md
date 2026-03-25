@@ -273,7 +273,8 @@ make help                   # show all targets
 make build                  # build the binary locally
 make vet                    # Go vet static analysis
 make lint                   # golangci-lint
-make test                   # unit tests with race detector and coverage
+make test                   # unit tests with race detector and coverage (skips integration)
+make test-integration       # integration tests against real Postgres + Redis (requires Docker)
 make govulncheck            # Go vulnerability scanner
 make generate               # regenerate sqlc and mocks
 make run                    # full stack with observability (requires config.hcl)
@@ -282,6 +283,26 @@ make clean                  # stop, remove volumes, remove binary
 make push                   # build and push multi-arch images to registry
 make release                # tag and push to trigger GitHub Release
 ```
+
+## Testing
+
+### Unit Tests
+
+`make test` runs all unit tests with the race detector. Integration tests are automatically skipped via the `-short` flag. Unit tests use gomock for interface boundaries and httptest for API client testing.
+
+### Integration Tests
+
+`make test-integration` spins up real Postgres and Redis containers via [testcontainers-go](https://golang.testcontainers.org/) and runs 26 tests against them. No external API calls are made — zero credit usage.
+
+**Postgres (18 tests):** Verifies migrations, CRUD operations, upsert behavior, TTL-aware reads (route staleness), squawk alert cooldown logic, batched retention deletes with old rows inserted via direct SQL, and connection health checks.
+
+**Redis (8 tests):** Verifies flight state round-trips through JSON serialization, SCAN+MGET retrieval, TTL expiration, key overwriting, and connection lifecycle.
+
+Requires Docker. Containers are started once per test run and cleaned up automatically. Each test truncates tables between runs for isolation.
+
+### CI
+
+The GitHub Actions CI pipeline runs unit tests and integration tests as separate jobs. Unit tests upload coverage to Codecov. Integration tests run against testcontainers with Docker available on the GitHub Actions runner.
 
 ## Project Structure
 
