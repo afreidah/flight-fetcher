@@ -15,9 +15,17 @@ FROM aircraft_meta
 WHERE icao24 = $1
 `
 
-func (q *Queries) GetAircraftMeta(ctx context.Context, icao24 string) (AircraftMetum, error) {
+type GetAircraftMetaRow struct {
+	Icao24       string
+	Registration string
+	Manufacturer string
+	Type         string
+	Operator     string
+}
+
+func (q *Queries) GetAircraftMeta(ctx context.Context, icao24 string) (GetAircraftMetaRow, error) {
 	row := q.db.QueryRow(ctx, getAircraftMeta, icao24)
-	var i AircraftMetum
+	var i GetAircraftMetaRow
 	err := row.Scan(
 		&i.Icao24,
 		&i.Registration,
@@ -29,13 +37,14 @@ func (q *Queries) GetAircraftMeta(ctx context.Context, icao24 string) (AircraftM
 }
 
 const upsertAircraftMeta = `-- name: UpsertAircraftMeta :exec
-INSERT INTO aircraft_meta (icao24, registration, manufacturer, type, operator)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO aircraft_meta (icao24, registration, manufacturer, type, operator, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (icao24) DO UPDATE SET
     registration = EXCLUDED.registration,
     manufacturer = EXCLUDED.manufacturer,
     type = EXCLUDED.type,
-    operator = EXCLUDED.operator
+    operator = EXCLUDED.operator,
+    updated_at = now()
 `
 
 type UpsertAircraftMetaParams struct {

@@ -14,6 +14,7 @@ type AircraftMetum struct {
 	Manufacturer string
 	Type         string
 	Operator     string
+	UpdatedAt    pgtype.Timestamptz
 }
 
 type FlightRoute struct {
