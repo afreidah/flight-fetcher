@@ -87,12 +87,13 @@ jobs:
           go-version-file: go.mod
 
       - name: Unit tests
-        run: go test -short -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -short -race -coverprofile=unit.out -covermode=atomic ./...
 
-      - name: Upload coverage
+      - name: Upload unit coverage
         uses: codecov/codecov-action@v5
         with:
-          files: coverage.out
+          files: unit.out
+          flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
 
   integration-test:
@@ -107,7 +108,14 @@ jobs:
           go-version-file: go.mod
 
       - name: Integration tests
-        run: go test -race -count=1 -timeout=5m ./internal/store/...
+        run: go test -race -count=1 -timeout=5m -coverprofile=integration.out -covermode=atomic ./internal/store/...
+
+      - name: Upload integration coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: integration.out
+          flags: integration
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   govulncheck:
     needs: [changes]
