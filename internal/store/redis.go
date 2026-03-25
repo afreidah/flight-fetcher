@@ -13,7 +13,9 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/opensky"
@@ -71,23 +73,42 @@ func (r *RedisStore) SetFlight(ctx context.Context, sv *opensky.StateVector) err
 }
 
 // GetAllFlights returns all current flight states stored in Redis. Uses SCAN
-// instead of KEYS to avoid blocking Redis during enumeration.
+// to collect keys without blocking Redis, then MGET to fetch all values in
+// a single round trip.
 func (r *RedisStore) GetAllFlights(ctx context.Context) ([]opensky.StateVector, error) {
-	var flights []opensky.StateVector
+	var keys []string
 	iter := r.client.Scan(ctx, 0, flightKeyPrefix+"*", 0).Iterator()
 	for iter.Next(ctx) {
-		data, err := r.client.Get(ctx, iter.Val()).Bytes()
-		if err != nil {
-			continue
-		}
-		var sv opensky.StateVector
-		if err := json.Unmarshal(data, &sv); err != nil {
-			continue
-		}
-		flights = append(flights, sv)
+		keys = append(keys, iter.Val())
 	}
 	if err := iter.Err(); err != nil {
 		return nil, err
+	}
+	if len(keys) == 0 {
+		return []opensky.StateVector{}, nil
+	}
+
+	vals, err := r.client.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("mget flights: %w", err)
+	}
+
+	flights := make([]opensky.StateVector, 0, len(vals))
+	for i, val := range vals {
+		str, ok := val.(string)
+		if !ok {
+			slog.WarnContext(ctx, "skipping nil flight key",
+				slog.String("key", keys[i]))
+			continue
+		}
+		var sv opensky.StateVector
+		if err := json.Unmarshal([]byte(str), &sv); err != nil {
+			slog.WarnContext(ctx, "skipping malformed flight data",
+				slog.String("key", keys[i]),
+				slog.String("error", err.Error()))
+			continue
+		}
+		flights = append(flights, sv)
 	}
 	return flights, nil
 }
@@ -97,7 +118,7 @@ func (r *RedisStore) GetAllFlights(ctx context.Context) ([]opensky.StateVector, 
 func (r *RedisStore) GetFlight(ctx context.Context, icao24 string) (*opensky.StateVector, error) {
 	key := flightKeyPrefix + icao24
 	data, err := r.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
 	if err != nil {
