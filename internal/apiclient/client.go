@@ -139,44 +139,36 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 	start := time.Now()
 	attrs := []attribute.KeyValue{attribute.String("upstream", c.name)}
+	defer func() {
+		c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
+		c.reqDur.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(attrs...))
+	}()
 
 	resp, err := c.httpClient.Do(req.WithContext(ctx))
-	dur := time.Since(start).Seconds()
-
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "transport error")
 		attrs = append(attrs, attribute.String("status", "error"))
-		c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
-		c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
 		c.applyBackoff(ctx)
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
 
-	statusAttr := attribute.String("status", strconv.Itoa(resp.StatusCode))
-	attrs = append(attrs, statusAttr)
+	attrs = append(attrs, attribute.String("status", strconv.Itoa(resp.StatusCode)))
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		resp.Body.Close()
 		span.SetStatus(codes.Error, "rate limited")
-		c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
-		c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
 		c.applyBackoff(ctx)
 		return nil, fmt.Errorf("rate limited (429), backing off for %s", c.currentBackoff())
 	}
 	if resp.StatusCode >= 500 {
 		resp.Body.Close()
 		span.SetStatus(codes.Error, "server error")
-		c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
-		c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
 		c.applyBackoff(ctx)
 		return nil, fmt.Errorf("server error (%d), backing off for %s", resp.StatusCode, c.currentBackoff())
 	}
 
-	span.SetStatus(codes.Ok, "")
-	c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
-	c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
 	c.resetBackoff()
 	return resp, nil
 }
