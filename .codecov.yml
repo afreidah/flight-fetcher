@@ -21,5 +21,3 @@ ignore:
   - "cmd/"
   - "internal/store/sqlc/"
   - "internal/store/migrations/"
-  - "internal/store/postgres.go"
-  - "internal/store/redis.go"

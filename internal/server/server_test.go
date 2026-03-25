@@ -470,6 +470,19 @@ func TestHandleGetAircraft_Sentinel(t *testing.T) {
 	}
 }
 
+// TestHandleGetAircraft_Error verifies that a store error returns 500.
+func TestHandleGetAircraft_Error(t *testing.T) {
+	srv := New(&Options{Flights: &stubFlightLister{}, Aircraft: &stubMetaReader{err: errors.New("pg down")}, Version: "test", RefreshSec: 5})
+	req := httptest.NewRequest(http.MethodGet, "/api/aircraft/abc123", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
 // TestHandleHealthz_Healthy verifies that all-healthy pingers return 200 with status "healthy".
 func TestHandleHealthz_Healthy(t *testing.T) {
 	srv := New(&Options{
