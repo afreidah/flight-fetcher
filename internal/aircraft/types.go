@@ -16,10 +16,10 @@ package aircraft
 // Info contains metadata about an aircraft identified by ICAO24 hex code.
 type Info struct {
 	ICAO24           string `json:"icao24"`
-	Registration     string `json:"Registration"`
-	ManufacturerName string `json:"ManufacturerName"`
-	Type             string `json:"Type"`
-	OperatorFlagCode string `json:"OperatorFlagCode"`
+	Registration     string `json:"registration"`
+	ManufacturerName string `json:"manufacturer_name"`
+	Type             string `json:"type"`
+	OperatorFlagCode string `json:"operator_flag_code"`
 }
 
 // IsSentinel returns true if the record is a negative cache entry with no
