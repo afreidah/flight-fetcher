@@ -12,8 +12,6 @@ package hexdb
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"net/url"
 
 	"github.com/afreidah/flight-fetcher/internal/apiclient"
@@ -45,28 +43,10 @@ func NewClient() *Client {
 // Lookup fetches aircraft metadata by ICAO24 hex code. Returns nil if the
 // aircraft is not found in HexDB.
 func (c *Client) Lookup(ctx context.Context, icao24 string) (*AircraftInfo, error) {
-	req, err := c.NewRequest(ctx, http.MethodGet, "/aircraft/"+url.PathEscape(icao24), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
-	}
-
-	var info AircraftInfo
-	if err := c.DecodeJSON(resp.Body, &info); err != nil {
+	info, err := apiclient.Lookup[AircraftInfo](c.Client, ctx, "/aircraft/"+url.PathEscape(icao24))
+	if err != nil || info == nil {
 		return nil, err
 	}
 	info.ICAO24 = icao24
-	return &info, nil
+	return info, nil
 }
