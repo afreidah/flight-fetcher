@@ -3,9 +3,26 @@
 All notable changes to this project are documented in this file.
 
 
-## [unreleased]
+## [0.9.4] - 2026-03-25
+
+### Fixed
+- fixup: make release task work
+
+### Other
+- Nest API client packages under apiclient/
+
+## [0.9.2] - 2026-03-25
 
 ### Added
+- Add GoReleaser config and release workflow
+- Add unit tests for aircraft domain type
+- Add unit tests for observe package
+- Add OpenTelemetry tracing, Prometheus metrics, and log correlation
+- Add database indexes, updated_at column, and batched retention deletes
+- Add circuit breaking and graceful degradation
+- Add connection pool configuration and configurable log level
+- Add graceful shutdown, health check endpoint, and Redis startup ping
+- Add unit tests for apiclient package
 - Add sortable flight list columns and deduplicate sentinel check
 - Add route cache TTL, fix squawk alert JSON fields, update docs
 - Add bounded seen maps with configurable eviction and enricher logging
@@ -24,6 +41,8 @@ All notable changes to this project are documented in this file.
 - Add style guide, CI, repo baseline, and apply conventions
 
 ### Fixed
+- Fix Nomad template, enforce poll minimum, harden Docker, simplify squawk
+- Fix Redis N+1 queries, silent errors, and error comparison
 - Fix OAuth2 token fetch race condition
 - Fix squawk alert selection and add temporary map marker
 - Fix squawk alert row alignment and squawk label HTML rendering
@@ -45,6 +64,12 @@ All notable changes to this project are documented in this file.
 - Update README.md
 
 ### Other
+- Extract aircraft domain type, update Nomad job, refresh README
+- Decouple enrichment from poll loop with async worker pool
+- Use slog.Group and errors.Join for modern Go idioms
+- Extract shared apiclient and harden HTTP layer
+- Sanitize API inputs and HTML outputs
+- Open source prep: Options struct, CONTRIBUTING, changelog, cleanup
 - Extract shared route.Info domain type from airlabs package
 - Cache rendered HTML page at startup instead of per-request
 - Move tokenURL to client field and parse durations once at load time
