@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/aircraft"
-	"github.com/afreidah/flight-fetcher/internal/opensky"
+	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 

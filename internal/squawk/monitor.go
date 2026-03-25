@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/geo"
-	"github.com/afreidah/flight-fetcher/internal/opensky"
+	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
 
 	"go.opentelemetry.io/otel"
