@@ -19,27 +19,55 @@ import (
 )
 
 // -------------------------------------------------------------------------
-// TYPES
+// RAW HCL TYPES (unexported, used only for deserialization)
 // -------------------------------------------------------------------------
 
-// Config holds all application configuration loaded from an HCL file.
+// rawConfig mirrors the HCL file structure with string durations.
+type rawConfig struct {
+	PollInterval      string `hcl:"poll_interval"`
+	EnrichmentRefresh string `hcl:"enrichment_refresh,optional"`
+
+	Location      Location              `hcl:"location,block"`
+	OpenSky       OpenSkyConfig         `hcl:"opensky,block"`
+	Redis         RedisConfig           `hcl:"redis,block"`
+	Postgres      PostgresConfig        `hcl:"postgres,block"`
+	AirLabs       *AirLabsConfig        `hcl:"airlabs,block"`
+	FlightAware   *FlightAwareConfig    `hcl:"flightaware,block"`
+	Server        *ServerConfig         `hcl:"server,block"`
+	SquawkMonitor *rawSquawkMonitorConfig `hcl:"squawk_monitor,block"`
+	Retention     *rawRetentionConfig   `hcl:"retention,block"`
+}
+
+type rawSquawkMonitorConfig struct {
+	Interval string `hcl:"interval"`
+}
+
+type rawRetentionConfig struct {
+	SightingsMaxAge string `hcl:"sightings_max_age"`
+	AlertsMaxAge    string `hcl:"alerts_max_age"`
+	RoutesMaxAge    string `hcl:"routes_max_age,optional"`
+	Interval        string `hcl:"interval,optional"`
+}
+
+// -------------------------------------------------------------------------
+// PUBLIC TYPES
+// -------------------------------------------------------------------------
+
+// Config holds all validated application configuration with parsed durations.
 type Config struct {
-	PollInterval       string `hcl:"poll_interval"`
-	EnrichmentRefresh  string `hcl:"enrichment_refresh,optional"`
-
-	Location      Location             `hcl:"location,block"`
-	OpenSky       OpenSkyConfig        `hcl:"opensky,block"`
-	Redis         RedisConfig          `hcl:"redis,block"`
-	Postgres      PostgresConfig       `hcl:"postgres,block"`
-	AirLabs       *AirLabsConfig       `hcl:"airlabs,block"`
-	FlightAware   *FlightAwareConfig   `hcl:"flightaware,block"`
-	Server        *ServerConfig        `hcl:"server,block"`
-	SquawkMonitor *SquawkMonitorConfig `hcl:"squawk_monitor,block"`
-	Retention     *RetentionConfig     `hcl:"retention,block"`
-
-	// Parsed durations populated by validate()
 	Poll           time.Duration
 	EnrichInterval time.Duration
+
+	Location    Location
+	OpenSky     OpenSkyConfig
+	Redis       RedisConfig
+	Postgres    PostgresConfig
+	AirLabs     *AirLabsConfig
+	FlightAware *FlightAwareConfig
+	Server      *ServerConfig
+
+	SquawkMonitor *SquawkMonitorConfig
+	Retention     *RetentionConfig
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -92,19 +120,13 @@ type FlightAwareConfig struct {
 	APIKey string `hcl:"api_key"`
 }
 
-// SquawkMonitorConfig holds settings for the global emergency squawk monitor.
+// SquawkMonitorConfig holds validated settings for the global emergency squawk monitor.
 type SquawkMonitorConfig struct {
-	Interval string        `hcl:"interval"`
-	Poll     time.Duration
+	Poll time.Duration
 }
 
-// RetentionConfig holds settings for automatic data cleanup.
+// RetentionConfig holds validated settings for automatic data cleanup.
 type RetentionConfig struct {
-	SightingsMaxAge string `hcl:"sightings_max_age"`
-	AlertsMaxAge    string `hcl:"alerts_max_age"`
-	RoutesMaxAge    string `hcl:"routes_max_age,optional"`
-	Interval        string `hcl:"interval,optional"`
-
 	Sightings     time.Duration
 	Alerts        time.Duration
 	Routes        time.Duration
@@ -116,99 +138,125 @@ type RetentionConfig struct {
 // -------------------------------------------------------------------------
 
 // Load reads and decodes an HCL configuration file at the given path,
-// then validates the configuration values.
+// validates configuration values, and returns a Config with parsed durations.
 func Load(path string) (*Config, error) {
-	var cfg Config
-	if err := hclsimple.DecodeFile(path, nil, &cfg); err != nil {
+	var raw rawConfig
+	if err := hclsimple.DecodeFile(path, nil, &raw); err != nil {
 		return nil, err
 	}
-	if err := cfg.validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-	return &cfg, nil
+	return raw.parse()
 }
 
 // -------------------------------------------------------------------------
 // INTERNALS
 // -------------------------------------------------------------------------
 
-// validate checks that all required fields are present, values are sane,
-// and parses duration strings into the typed duration fields.
-func (c *Config) validate() error {
-	if c.Location.Lat < -90 || c.Location.Lat > 90 {
-		return fmt.Errorf("location.lat must be between -90 and 90, got %f", c.Location.Lat)
+// parse validates the raw HCL input and produces a Config with parsed durations.
+func (r *rawConfig) parse() (*Config, error) {
+	if r.Location.Lat < -90 || r.Location.Lat > 90 {
+		return nil, fmt.Errorf("location.lat must be between -90 and 90, got %f", r.Location.Lat)
 	}
-	if c.Location.Lon < -180 || c.Location.Lon > 180 {
-		return fmt.Errorf("location.lon must be between -180 and 180, got %f", c.Location.Lon)
+	if r.Location.Lon < -180 || r.Location.Lon > 180 {
+		return nil, fmt.Errorf("location.lon must be between -180 and 180, got %f", r.Location.Lon)
 	}
-	if c.Location.RadiusKm <= 0 {
-		return errors.New("location.radius_km must be positive")
+	if r.Location.RadiusKm <= 0 {
+		return nil, errors.New("location.radius_km must be positive")
 	}
 
-	var err error
-	c.Poll, err = time.ParseDuration(c.PollInterval)
+	poll, err := time.ParseDuration(r.PollInterval)
 	if err != nil {
-		return fmt.Errorf("poll_interval: %w", err)
+		return nil, fmt.Errorf("poll_interval: %w", err)
 	}
-	if c.Poll < 10*time.Second {
-		return fmt.Errorf("poll_interval must be at least 10s, got %s", c.Poll)
-	}
-	if c.EnrichmentRefresh != "" {
-		c.EnrichInterval, err = time.ParseDuration(c.EnrichmentRefresh)
-		if err != nil {
-			return fmt.Errorf("enrichment_refresh: %w", err)
-		}
-	} else {
-		c.EnrichInterval = time.Hour
+	if poll < 10*time.Second {
+		return nil, fmt.Errorf("poll_interval must be at least 10s, got %s", poll)
 	}
 
-	if c.OpenSky.ID == "" || c.OpenSky.Secret == "" {
-		return errors.New("opensky.id and opensky.secret are required")
-	}
-	if c.Redis.Addr == "" {
-		return errors.New("redis.addr is required")
-	}
-	if c.Postgres.DSN == "" {
-		return errors.New("postgres.dsn is required")
-	}
-	if c.AirLabs != nil && c.AirLabs.APIKey == "" {
-		return errors.New("airlabs.api_key is required when airlabs block is present")
-	}
-	if c.FlightAware != nil && c.FlightAware.APIKey == "" {
-		return errors.New("flightaware.api_key is required when flightaware block is present")
-	}
-	if c.SquawkMonitor != nil {
-		c.SquawkMonitor.Poll, err = time.ParseDuration(c.SquawkMonitor.Interval)
+	enrichInterval := time.Hour
+	if r.EnrichmentRefresh != "" {
+		enrichInterval, err = time.ParseDuration(r.EnrichmentRefresh)
 		if err != nil {
-			return fmt.Errorf("squawk_monitor.interval: %w", err)
+			return nil, fmt.Errorf("enrichment_refresh: %w", err)
 		}
 	}
-	if c.Retention != nil {
-		r := c.Retention
-		r.Sightings, err = time.ParseDuration(r.SightingsMaxAge)
+
+	if r.OpenSky.ID == "" || r.OpenSky.Secret == "" {
+		return nil, errors.New("opensky.id and opensky.secret are required")
+	}
+	if r.Redis.Addr == "" {
+		return nil, errors.New("redis.addr is required")
+	}
+	if r.Postgres.DSN == "" {
+		return nil, errors.New("postgres.dsn is required")
+	}
+	if r.AirLabs != nil && r.AirLabs.APIKey == "" {
+		return nil, errors.New("airlabs.api_key is required when airlabs block is present")
+	}
+	if r.FlightAware != nil && r.FlightAware.APIKey == "" {
+		return nil, errors.New("flightaware.api_key is required when flightaware block is present")
+	}
+
+	cfg := &Config{
+		Poll:           poll,
+		EnrichInterval: enrichInterval,
+		Location:       r.Location,
+		OpenSky:        r.OpenSky,
+		Redis:          r.Redis,
+		Postgres:       r.Postgres,
+		AirLabs:        r.AirLabs,
+		FlightAware:    r.FlightAware,
+		Server:         r.Server,
+	}
+
+	if r.SquawkMonitor != nil {
+		smPoll, err := time.ParseDuration(r.SquawkMonitor.Interval)
 		if err != nil {
-			return fmt.Errorf("retention.sightings_max_age: %w", err)
+			return nil, fmt.Errorf("squawk_monitor.interval: %w", err)
 		}
-		r.Alerts, err = time.ParseDuration(r.AlertsMaxAge)
+		cfg.SquawkMonitor = &SquawkMonitorConfig{Poll: smPoll}
+	}
+
+	if r.Retention != nil {
+		ret, err := parseRetention(r.Retention)
 		if err != nil {
-			return fmt.Errorf("retention.alerts_max_age: %w", err)
+			return nil, err
 		}
-		if r.RoutesMaxAge != "" {
-			r.Routes, err = time.ParseDuration(r.RoutesMaxAge)
-			if err != nil {
-				return fmt.Errorf("retention.routes_max_age: %w", err)
-			}
-		} else {
-			r.Routes = 24 * time.Hour
-		}
-		if r.Interval != "" {
-			r.CleanInterval, err = time.ParseDuration(r.Interval)
-			if err != nil {
-				return fmt.Errorf("retention.interval: %w", err)
-			}
-		} else {
-			r.CleanInterval = time.Hour
+		cfg.Retention = ret
+	}
+
+	return cfg, nil
+}
+
+// parseRetention validates and parses the raw retention config.
+func parseRetention(r *rawRetentionConfig) (*RetentionConfig, error) {
+	sightings, err := time.ParseDuration(r.SightingsMaxAge)
+	if err != nil {
+		return nil, fmt.Errorf("retention.sightings_max_age: %w", err)
+	}
+	alerts, err := time.ParseDuration(r.AlertsMaxAge)
+	if err != nil {
+		return nil, fmt.Errorf("retention.alerts_max_age: %w", err)
+	}
+
+	routes := 24 * time.Hour
+	if r.RoutesMaxAge != "" {
+		routes, err = time.ParseDuration(r.RoutesMaxAge)
+		if err != nil {
+			return nil, fmt.Errorf("retention.routes_max_age: %w", err)
 		}
 	}
-	return nil
+
+	cleanInterval := time.Hour
+	if r.Interval != "" {
+		cleanInterval, err = time.ParseDuration(r.Interval)
+		if err != nil {
+			return nil, fmt.Errorf("retention.interval: %w", err)
+		}
+	}
+
+	return &RetentionConfig{
+		Sightings:     sightings,
+		Alerts:        alerts,
+		Routes:        routes,
+		CleanInterval: cleanInterval,
+	}, nil
 }

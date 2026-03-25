@@ -61,8 +61,8 @@ postgres {
 	if cfg.OpenSky.Secret != "test-secret" {
 		t.Errorf("OpenSky.Secret = %q, want %q", cfg.OpenSky.Secret, "test-secret")
 	}
-	if cfg.PollInterval != "20s" {
-		t.Errorf("PollInterval = %q, want %q", cfg.PollInterval, "20s")
+	if cfg.Poll != 20*time.Second {
+		t.Errorf("Poll = %v, want 20s", cfg.Poll)
 	}
 	if cfg.Redis.Addr != "localhost:6379" {
 		t.Errorf("Redis.Addr = %q, want %q", cfg.Redis.Addr, "localhost:6379")
