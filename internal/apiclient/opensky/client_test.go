@@ -31,6 +31,76 @@ func testClient(srv *httptest.Server) *Client {
 	}
 }
 
+// TestNewClient verifies that the constructor returns a valid client.
+func TestNewClient(t *testing.T) {
+	c := NewClient("test-id", "test-secret")
+	if c == nil {
+		t.Fatal("NewClient() returned nil")
+	}
+}
+
+// TestLookup_Success verifies that the metadata endpoint returns aircraft info.
+func TestLookup_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/metadata/aircraft/icao/abc123" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"registration":"N12345","manufacturerName":"Boeing","model":"737-800","operatorIcao":"UAL"}`))
+	}))
+	defer srv.Close()
+
+	c := testClient(srv)
+	info, err := c.Lookup(context.Background(), "abc123")
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if info == nil {
+		t.Fatal("Lookup() returned nil")
+	}
+	if info.Registration != "N12345" {
+		t.Errorf("Registration = %q, want %q", info.Registration, "N12345")
+	}
+	if info.Type != "737-800" {
+		t.Errorf("Type = %q, want %q", info.Type, "737-800")
+	}
+}
+
+// TestLookup_NotFound verifies that a 404 returns nil.
+func TestLookup_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := testClient(srv)
+	info, err := c.Lookup(context.Background(), "unknown")
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if info != nil {
+		t.Errorf("Lookup() = %v, want nil for 404", info)
+	}
+}
+
+// TestLookup_EmptyData verifies that empty registration and model returns nil.
+func TestLookup_EmptyData(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"registration":"","manufacturerName":"","model":"","operatorIcao":""}`))
+	}))
+	defer srv.Close()
+
+	c := testClient(srv)
+	info, err := c.Lookup(context.Background(), "abc123")
+	if err != nil {
+		t.Fatalf("Lookup() error = %v", err)
+	}
+	if info != nil {
+		t.Errorf("Lookup() = %v, want nil for empty data", info)
+	}
+}
+
 // TestUnmarshalStateVector_Valid verifies that a complete state vector array is decoded correctly.
 func TestUnmarshalStateVector_Valid(t *testing.T) {
 	raw := `["abc123", "UAL123  ", "United States", 1234, 1234, -118.4081, 33.9425, 3048.0, false, 125.5, 270.0, -5.2, null, 3100.0, "1234", false, 0]`

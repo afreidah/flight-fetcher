@@ -18,6 +18,14 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/apiclient"
 )
 
+// TestNewClient verifies that the constructor returns a valid client.
+func TestNewClient(t *testing.T) {
+	c := NewClient()
+	if c == nil {
+		t.Fatal("NewClient() returned nil")
+	}
+}
+
 // testClient creates a Client pointed at the given test server.
 func testClient(srv *httptest.Server) *Client {
 	return &Client{Client: apiclient.New(apiclient.Options{BaseURL: srv.URL})}
