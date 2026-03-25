@@ -64,8 +64,8 @@ location {
 }
 
 opensky {
-  username = "{{ .Data.data.opensky_username }}"
-  password = "{{ .Data.data.opensky_password }}"
+  id     = "{{ .Data.data.opensky_id }}"
+  secret = "{{ .Data.data.opensky_secret }}"
 }
 
 poll_interval = "20s"
