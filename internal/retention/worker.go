@@ -12,6 +12,8 @@ package retention
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -70,12 +72,13 @@ func (w *Worker) Run(ctx context.Context) {
 // INTERNALS
 // -------------------------------------------------------------------------
 
-// cleanup executes a single cleanup cycle for both tables.
+// cleanup executes a single cleanup cycle for all tables.
 func (w *Worker) cleanup(ctx context.Context) {
+	var errs []error
+
 	sightings, err := w.cleaner.DeleteOldSightings(ctx, w.sightingsAge)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to clean sightings",
-			slog.String("error", err.Error()))
+		errs = append(errs, fmt.Errorf("sightings: %w", err))
 	} else if sightings > 0 {
 		slog.InfoContext(ctx, "cleaned old sightings",
 			slog.Int64("deleted", sightings))
@@ -83,8 +86,7 @@ func (w *Worker) cleanup(ctx context.Context) {
 
 	alerts, err := w.cleaner.DeleteOldSquawkAlerts(ctx, w.alertsAge)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to clean squawk alerts",
-			slog.String("error", err.Error()))
+		errs = append(errs, fmt.Errorf("squawk alerts: %w", err))
 	} else if alerts > 0 {
 		slog.InfoContext(ctx, "cleaned old squawk alerts",
 			slog.Int64("deleted", alerts))
@@ -92,10 +94,14 @@ func (w *Worker) cleanup(ctx context.Context) {
 
 	routes, err := w.cleaner.DeleteOldRoutes(ctx, w.routesAge)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to clean stale routes",
-			slog.String("error", err.Error()))
+		errs = append(errs, fmt.Errorf("routes: %w", err))
 	} else if routes > 0 {
 		slog.InfoContext(ctx, "cleaned stale routes",
 			slog.Int64("deleted", routes))
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		slog.WarnContext(ctx, "retention cleanup errors",
+			slog.String("error", err.Error()))
 	}
 }

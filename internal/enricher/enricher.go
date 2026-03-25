@@ -113,9 +113,10 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 	}
 
 	slog.InfoContext(ctx, "aircraft enriched",
-		slog.String("icao24", icao24),
-		slog.String("registration", info.Registration),
-		slog.String("type", info.Type))
+		slog.Group("aircraft",
+			slog.String("icao24", icao24),
+			slog.String("registration", info.Registration),
+			slog.String("type", info.Type)))
 
 	if err := e.opts.Store.SaveAircraftMeta(ctx, info); err != nil {
 		slog.WarnContext(ctx, "failed to save aircraft meta",
@@ -172,9 +173,10 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 	}
 
 	slog.InfoContext(ctx, "route enriched",
-		slog.String("callsign", callsign),
-		slog.String("from", route.DepIATA),
-		slog.String("to", route.ArrIATA))
+		slog.Group("route",
+			slog.String("callsign", callsign),
+			slog.String("from", route.DepIATA),
+			slog.String("to", route.ArrIATA)))
 
 	if err := e.opts.RouteStore.SaveFlightRoute(ctx, route); err != nil {
 		slog.WarnContext(ctx, "failed to save flight route",

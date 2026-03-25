@@ -130,11 +130,12 @@ func (m *Monitor) scan(ctx context.Context) {
 		callsign := strings.TrimSpace(sv.Callsign)
 
 		slog.WarnContext(ctx, "emergency squawk detected",
-			slog.String("icao24", sv.ICAO24),
-			slog.String("callsign", callsign),
-			slog.String("squawk", sv.Squawk),
-			slog.Float64("lat", sv.Latitude),
-			slog.Float64("lon", sv.Longitude))
+			slog.Group("alert",
+				slog.String("icao24", sv.ICAO24),
+				slog.String("callsign", callsign),
+				slog.String("squawk", sv.Squawk),
+				slog.Float64("lat", sv.Latitude),
+				slog.Float64("lon", sv.Longitude)))
 
 		if err := m.store.InsertSquawkAlert(ctx, sv.ICAO24, callsign, sv.Squawk, sv.Latitude, sv.Longitude); err != nil {
 			slog.WarnContext(ctx, "failed to store squawk alert",
