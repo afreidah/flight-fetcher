@@ -150,6 +150,9 @@ func (c *Config) validate() error {
 	if err != nil {
 		return fmt.Errorf("poll_interval: %w", err)
 	}
+	if c.Poll < 10*time.Second {
+		return fmt.Errorf("poll_interval must be at least 10s, got %s", c.Poll)
+	}
 	if c.EnrichmentRefresh != "" {
 		c.EnrichInterval, err = time.ParseDuration(c.EnrichmentRefresh)
 		if err != nil {

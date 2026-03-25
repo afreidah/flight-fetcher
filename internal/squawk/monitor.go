@@ -26,11 +26,14 @@ import (
 // CONSTANTS
 // -------------------------------------------------------------------------
 
-// emergencySquawks are the transponder codes that indicate an emergency.
-var emergencySquawks = map[string]bool{
-	"7500": true, // hijack
-	"7600": true, // radio failure
-	"7700": true, // general emergency
+// isEmergencySquawk returns true if the code is an emergency transponder code
+// (7500 hijack, 7600 radio failure, 7700 general emergency).
+func isEmergencySquawk(code string) bool {
+	switch code {
+	case "7500", "7600", "7700":
+		return true
+	}
+	return false
 }
 
 // -------------------------------------------------------------------------
@@ -109,7 +112,7 @@ func (m *Monitor) scan(ctx context.Context) {
 
 	count := 0
 	for _, sv := range resp.States {
-		if !emergencySquawks[sv.Squawk] {
+		if !isEmergencySquawk(sv.Squawk) {
 			continue
 		}
 
