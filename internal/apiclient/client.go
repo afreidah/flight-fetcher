@@ -159,7 +159,11 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if resp.StatusCode == http.StatusTooManyRequests {
 		resp.Body.Close()
 		span.SetStatus(codes.Error, "rate limited")
-		c.applyBackoff(ctx)
+		if retryAfter := parseRetryAfter(resp.Header.Get("Retry-After")); retryAfter > 0 {
+			c.applyBackoffDuration(ctx, retryAfter)
+		} else {
+			c.applyBackoff(ctx)
+		}
 		return nil, fmt.Errorf("rate limited (429), backing off for %s", c.currentBackoff())
 	}
 	if resp.StatusCode >= 500 {
@@ -261,6 +265,18 @@ func (c *Client) applyBackoff(ctx context.Context) {
 	}
 }
 
+// applyBackoffDuration sets a specific backoff duration (from Retry-After)
+// instead of using exponential backoff.
+func (c *Client) applyBackoffDuration(ctx context.Context, d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.backoffUtil = time.Now().Add(d)
+	c.backoff = d
+	slog.WarnContext(ctx, "rate limited, applying server-requested backoff",
+		slog.String("duration", d.String()))
+}
+
 // resetBackoff clears the backoff state after a successful request.
 func (c *Client) resetBackoff() {
 	c.mu.Lock()
@@ -275,4 +291,17 @@ func (c *Client) currentBackoff() time.Duration {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.backoff
+}
+
+// parseRetryAfter parses a Retry-After header value as seconds.
+// Returns 0 if the header is empty or unparseable.
+func parseRetryAfter(val string) time.Duration {
+	if val == "" {
+		return 0
+	}
+	seconds, err := strconv.Atoi(val)
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
 }

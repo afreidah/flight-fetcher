@@ -31,11 +31,16 @@ import (
 // CONSTANTS
 // -------------------------------------------------------------------------
 
-// isEmergencySquawk returns true if the code is an emergency transponder code
-// (7500 hijack, 7600 radio failure, 7700 general emergency).
+const (
+	SquawkHijack       = "7500" // aircraft hijacking
+	SquawkRadioFailure = "7600" // radio/communications failure
+	SquawkEmergency    = "7700" // general emergency
+)
+
+// isEmergencySquawk returns true if the code is an emergency transponder code.
 func isEmergencySquawk(code string) bool {
 	switch code {
-	case "7500", "7600", "7700":
+	case SquawkHijack, SquawkRadioFailure, SquawkEmergency:
 		return true
 	}
 	return false
