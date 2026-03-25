@@ -52,10 +52,15 @@ type SquawkAlertReader interface {
 	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error)
 }
 
-// HealthPinger checks if a named backend dependency is reachable.
+// Pinger checks if a backend dependency is reachable.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// HealthPinger pairs a Pinger with a name for health check reporting.
 type HealthPinger struct {
 	Name   string
-	Pinger interface{ Ping(ctx context.Context) error }
+	Pinger Pinger
 }
 
 // -------------------------------------------------------------------------
@@ -110,8 +115,9 @@ func New(opts *Options) *Server {
 }
 
 // ListenAndServe starts the HTTP server on the given address. Blocks until
-// the context is cancelled, then shuts down gracefully.
-func (s *Server) ListenAndServe(ctx context.Context, addr string) {
+// the context is cancelled, then shuts down gracefully. Returns a non-nil
+// error if the server fails to start or shutdown fails.
+func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           otelhttp.NewHandler(s.mux, "flight-fetcher"),
@@ -133,8 +139,9 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) {
 
 	slog.InfoContext(ctx, "dashboard listening", slog.String("addr", addr))
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		slog.ErrorContext(ctx, "dashboard error", slog.String("error", err.Error()))
+		return err
 	}
+	return nil
 }
 
 // -------------------------------------------------------------------------

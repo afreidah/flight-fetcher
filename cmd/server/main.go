@@ -147,7 +147,7 @@ func main() {
 			Version:    Version,
 			RefreshSec: cfg.Server.RefreshSeconds(),
 		})
-		g.Go(func() error { srv.ListenAndServe(ctx, cfg.Server.Listen); return nil })
+		g.Go(func() error { return srv.ListenAndServe(ctx, cfg.Server.Listen) })
 	}
 
 	if cfg.SquawkMonitor != nil {
