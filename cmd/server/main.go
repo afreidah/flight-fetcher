@@ -90,32 +90,30 @@ func main() {
 	}
 	defer pgStore.Close()
 
-	var routeLookup enricher.RouteLookup
-	var routeFallback enricher.RouteLookup
-	var routeStore enricher.RouteStore
+	aircraftSources := []enricher.NamedAircraftLookup{
+		{Name: "hexdb", Lookup: hexdbClient},
+		{Name: "opensky", Lookup: opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)},
+	}
+
+	var routeSources []enricher.NamedRouteLookup
 	if cfg.AirLabs != nil && cfg.AirLabs.APIKey != "" {
-		routeLookup = airlabs.NewClient(cfg.AirLabs.APIKey)
-		routeStore = pgStore
+		routeSources = append(routeSources, enricher.NamedRouteLookup{
+			Name: "airlabs", Lookup: airlabs.NewClient(cfg.AirLabs.APIKey),
+		})
 		slog.InfoContext(ctx, "airlabs route enrichment enabled")
 	}
 	if cfg.FlightAware != nil && cfg.FlightAware.APIKey != "" {
-		fa := flightaware.NewClient(cfg.FlightAware.APIKey)
-		if routeLookup != nil {
-			routeFallback = fa
-			slog.InfoContext(ctx, "flightaware route fallback enabled")
-		} else {
-			routeLookup = fa
-			routeStore = pgStore
-			slog.InfoContext(ctx, "flightaware route enrichment enabled (primary)")
-		}
+		routeSources = append(routeSources, enricher.NamedRouteLookup{
+			Name: "flightaware", Lookup: flightaware.NewClient(cfg.FlightAware.APIKey),
+		})
+		slog.InfoContext(ctx, "flightaware route enrichment enabled")
 	}
 
 	enr := enricher.New(&enricher.Options{
-		Lookup:        hexdbClient,
-		Store:         pgStore,
-		RouteLookup:   routeLookup,
-		RouteFallback: routeFallback,
-		RouteStore:    routeStore,
+		AircraftSources: aircraftSources,
+		Store:           pgStore,
+		RouteSources:    routeSources,
+		RouteStore:      pgStore,
 	})
 	p := poller.New(&poller.Options{
 		Source:        oskyClient,

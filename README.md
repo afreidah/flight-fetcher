@@ -12,9 +12,9 @@ A self-hosted aircraft tracking service written in Go that monitors airspace aro
 
 * **Aircraft Polling and Filtering** - Queries the OpenSky Network REST API on a configurable interval for aircraft state vectors within a geographic bounding box, then applies precise haversine distance filtering to enforce a circular radius. Each poll cycle captures ICAO24 identifier, callsign, position, altitude, velocity, heading, vertical rate, ground status, and squawk transponder code.
 
-* **Aircraft Metadata Enrichment** - When a previously unseen ICAO24 appears, the service queries HexDB.io for static aircraft information including registration number, manufacturer, aircraft type, and operator. Results are cached in PostgreSQL so each aircraft is only looked up once. Enrichment runs asynchronously in a background worker pool so poll cycles are never blocked by external API latency.
+* **Aircraft Metadata Enrichment** - When a previously unseen ICAO24 appears, the service queries a chain of sources for static aircraft information including registration number, manufacturer, aircraft type, and operator: HexDB.io (primary) with OpenSky Network metadata (fallback). Each source is tried in order until one returns data. Results are cached in PostgreSQL so each aircraft is only looked up once. Enrichment runs asynchronously in a background worker pool so poll cycles are never blocked by external API latency.
 
-* **Flight Route Enrichment** - When a new callsign appears, the service queries AirLabs (primary) and FlightAware AeroAPI (fallback) to resolve departure and arrival airports. Routes are cached in PostgreSQL with a configurable TTL (default 24h) so stale routes are refreshed daily. The enrichment cache is periodically evicted to retry previously failed lookups.
+* **Flight Route Enrichment** - When a new callsign appears, the service queries a chain of sources to resolve departure and arrival airports: AirLabs (primary) with FlightAware AeroAPI (fallback). Routes are cached in PostgreSQL with a configurable TTL (default 24h) so stale routes are refreshed daily. The enrichment cache is periodically evicted to retry previously failed lookups.
 
 * **Circuit Breaking** - All external API clients share a common HTTP client with exponential backoff on rate limits (429), server errors (5xx), and transport failures. This prevents request storms against down services and allows automatic recovery.
 
@@ -36,7 +36,8 @@ A self-hosted aircraft tracking service written in Go that monitors airspace aro
          poll on interval
                   |
          +--------v---------+
-         |  flight-fetcher  |---> HexDB.io (aircraft metadata)
+         |  flight-fetcher  |---> HexDB.io (aircraft metadata, primary)
+         |                  |---> OpenSky metadata (aircraft, fallback)
          |                  |---> AirLabs (flight routes, primary)
          |                  |---> FlightAware (flight routes, fallback)
          +--+---------+--+--+
