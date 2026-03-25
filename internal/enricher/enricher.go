@@ -19,7 +19,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
-//go:generate mockgen -destination mock_enricher_test.go -package enricher github.com/afreidah/flight-fetcher/internal/enricher AircraftStore,AircraftLookup,RouteStore,RouteLookup
+//go:generate mockgen -destination mock_enricher_test.go -package enricher github.com/afreidah/flight-fetcher/internal/enricher AircraftStore,RouteStore
 
 // -------------------------------------------------------------------------
 // INTERFACES
@@ -31,43 +31,27 @@ type AircraftStore interface {
 	SaveAircraftMeta(ctx context.Context, info *aircraft.Info) error
 }
 
-// AircraftLookup fetches aircraft metadata from an external source.
-type AircraftLookup interface {
-	Lookup(ctx context.Context, icao24 string) (*aircraft.Info, error)
-}
-
 // RouteStore reads and writes cached flight route information.
 type RouteStore interface {
 	GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error)
 	SaveFlightRoute(ctx context.Context, route *route.Info) error
 }
 
-// RouteLookup fetches flight route information from an external source.
-type RouteLookup interface {
-	LookupRoute(ctx context.Context, callsign string) (*route.Info, error)
-}
-
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
 
-// NamedAircraftLookup pairs an AircraftLookup with a name for logging.
-type NamedAircraftLookup struct {
-	Name   string
-	Lookup AircraftLookup
-}
-
-// NamedRouteLookup pairs a RouteLookup with a name for logging.
-type NamedRouteLookup struct {
-	Name   string
-	Lookup RouteLookup
+// NamedSource pairs a lookup function with a name for logging.
+type NamedSource[T any] struct {
+	Name string
+	Fn   func(ctx context.Context, key string) (*T, error)
 }
 
 // Options holds the dependencies for the enricher.
 type Options struct {
-	AircraftSources []NamedAircraftLookup
+	AircraftSources []NamedSource[aircraft.Info]
 	Store           AircraftStore
-	RouteSources    []NamedRouteLookup
+	RouteSources    []NamedSource[route.Info]
 	RouteStore      RouteStore
 }
 
@@ -81,7 +65,7 @@ type Enricher struct {
 // -------------------------------------------------------------------------
 
 // New creates an Enricher with the given options. Route enrichment is enabled
-// when RouteLookup and RouteStore are non-nil.
+// when RouteSources and RouteStore are non-nil.
 func New(opts *Options) *Enricher {
 	return &Enricher{opts: *opts}
 }
@@ -90,63 +74,22 @@ func New(opts *Options) *Enricher {
 // true when enrichment is complete (data cached or confirmed absent). Returns
 // false on transient errors so the caller can retry.
 func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
-	existing, err := e.opts.Store.GetAircraftMeta(ctx, icao24)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to check aircraft meta",
-			slog.String("icao24", icao24),
-			slog.String("error", err.Error()))
-		return false
-	}
-	if existing != nil {
-		return true
-	}
-
-	var info *aircraft.Info
-	var triedSources []string
-	for _, src := range e.opts.AircraftSources {
-		triedSources = append(triedSources, src.Name)
-		slog.InfoContext(ctx, "enriching aircraft",
-			slog.String("icao24", icao24),
-			slog.String("source", src.Name))
-
-		result, err := src.Lookup.Lookup(ctx, icao24)
-		if err != nil {
-			slog.WarnContext(ctx, "aircraft lookup failed",
+	return enrich(ctx, enrichSpec[aircraft.Info]{
+		label:    "aircraft",
+		keyLabel: "icao24",
+		key:      icao24,
+		get:      e.opts.Store.GetAircraftMeta,
+		sources:  e.opts.AircraftSources,
+		save:     e.opts.Store.SaveAircraftMeta,
+		sentinel: &aircraft.Info{ICAO24: icao24},
+		logResult: func(info *aircraft.Info, source string) slog.Attr {
+			return slog.Group("aircraft",
 				slog.String("icao24", icao24),
-				slog.String("source", src.Name),
-				slog.String("error", err.Error()))
-			continue
-		}
-		if result != nil {
-			info = result
-			slog.InfoContext(ctx, "aircraft enriched",
-				slog.Group("aircraft",
-					slog.String("icao24", icao24),
-					slog.String("registration", info.Registration),
-					slog.String("type", info.Type),
-					slog.String("source", src.Name)))
-			break
-		}
-	}
-	if info == nil {
-		slog.InfoContext(ctx, "no aircraft data found",
-			slog.String("icao24", icao24),
-			slog.Any("sources_tried", triedSources))
-		sentinel := &aircraft.Info{ICAO24: icao24}
-		if err := e.opts.Store.SaveAircraftMeta(ctx, sentinel); err != nil {
-			slog.WarnContext(ctx, "failed to save aircraft sentinel",
-				slog.String("icao24", icao24),
-				slog.String("error", err.Error()))
-		}
-		return true
-	}
-
-	if err := e.opts.Store.SaveAircraftMeta(ctx, info); err != nil {
-		slog.WarnContext(ctx, "failed to save aircraft meta",
-			slog.String("icao24", icao24),
-			slog.String("error", err.Error()))
-	}
-	return true
+				slog.String("registration", info.Registration),
+				slog.String("type", info.Type),
+				slog.String("source", source))
+		},
+	})
 }
 
 // EnrichRoute looks up and caches flight route information if not already
@@ -157,11 +100,45 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 	if len(e.opts.RouteSources) == 0 || e.opts.RouteStore == nil {
 		return true
 	}
+	return enrich(ctx, enrichSpec[route.Info]{
+		label:    "route",
+		keyLabel: "callsign",
+		key:      callsign,
+		get:      e.opts.RouteStore.GetFlightRoute,
+		sources:  e.opts.RouteSources,
+		save:     e.opts.RouteStore.SaveFlightRoute,
+		logResult: func(ri *route.Info, source string) slog.Attr {
+			return slog.Group("route",
+				slog.String("callsign", callsign),
+				slog.String("from", ri.DepIATA),
+				slog.String("to", ri.ArrIATA),
+				slog.String("source", source))
+		},
+	})
+}
 
-	existing, err := e.opts.RouteStore.GetFlightRoute(ctx, callsign)
+// -------------------------------------------------------------------------
+// INTERNALS
+// -------------------------------------------------------------------------
+
+// enrichSpec parameterizes the shared enrichment logic for a given type.
+type enrichSpec[T any] struct {
+	label     string                                            // e.g. "aircraft", "route"
+	keyLabel  string                                            // e.g. "icao24", "callsign"
+	key       string                                            // the lookup key
+	get       func(ctx context.Context, key string) (*T, error) // cache check
+	sources   []NamedSource[T]                                  // ordered lookup sources
+	save      func(ctx context.Context, val *T) error           // persist result
+	sentinel  *T                                                // if non-nil, saved on miss
+	logResult func(val *T, source string) slog.Attr             // success log attributes
+}
+
+// enrich implements the shared check-cache → try-sources → save pattern.
+func enrich[T any](ctx context.Context, spec enrichSpec[T]) bool {
+	existing, err := spec.get(ctx, spec.key)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to check flight route",
-			slog.String("callsign", callsign),
+		slog.WarnContext(ctx, "failed to check "+spec.label,
+			slog.String(spec.keyLabel, spec.key),
 			slog.String("error", err.Error()))
 		return false
 	}
@@ -169,43 +146,46 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 		return true
 	}
 
-	var ri *route.Info
+	var result *T
 	var triedSources []string
-	for _, src := range e.opts.RouteSources {
+	for _, src := range spec.sources {
 		triedSources = append(triedSources, src.Name)
-		slog.InfoContext(ctx, "enriching route",
-			slog.String("callsign", callsign),
+		slog.InfoContext(ctx, "enriching "+spec.label,
+			slog.String(spec.keyLabel, spec.key),
 			slog.String("source", src.Name))
 
-		result, err := src.Lookup.LookupRoute(ctx, callsign)
+		val, err := src.Fn(ctx, spec.key)
 		if err != nil {
-			slog.WarnContext(ctx, "route lookup failed",
-				slog.String("callsign", callsign),
+			slog.WarnContext(ctx, spec.label+" lookup failed",
+				slog.String(spec.keyLabel, spec.key),
 				slog.String("source", src.Name),
 				slog.String("error", err.Error()))
 			continue
 		}
-		if result != nil {
-			ri = result
-			slog.InfoContext(ctx, "route enriched",
-				slog.Group("route",
-					slog.String("callsign", callsign),
-					slog.String("from", ri.DepIATA),
-					slog.String("to", ri.ArrIATA),
-					slog.String("source", src.Name)))
+		if val != nil {
+			result = val
+			slog.InfoContext(ctx, spec.label+" enriched", spec.logResult(val, src.Name))
 			break
 		}
 	}
-	if ri == nil {
-		slog.InfoContext(ctx, "no route data found",
-			slog.String("callsign", callsign),
+
+	if result == nil {
+		slog.InfoContext(ctx, "no "+spec.label+" data found",
+			slog.String(spec.keyLabel, spec.key),
 			slog.Any("sources_tried", triedSources))
+		if spec.sentinel != nil {
+			if err := spec.save(ctx, spec.sentinel); err != nil {
+				slog.WarnContext(ctx, "failed to save "+spec.label+" sentinel",
+					slog.String(spec.keyLabel, spec.key),
+					slog.String("error", err.Error()))
+			}
+		}
 		return true
 	}
 
-	if err := e.opts.RouteStore.SaveFlightRoute(ctx, ri); err != nil {
-		slog.WarnContext(ctx, "failed to save flight route",
-			slog.String("callsign", callsign),
+	if err := spec.save(ctx, result); err != nil {
+		slog.WarnContext(ctx, "failed to save "+spec.label,
+			slog.String(spec.keyLabel, spec.key),
 			slog.String("error", err.Error()))
 	}
 	return true

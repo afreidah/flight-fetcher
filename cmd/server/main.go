@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/config"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
@@ -28,6 +29,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/poller"
 	"github.com/afreidah/flight-fetcher/internal/retention"
+	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/server"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/store"
@@ -90,21 +92,22 @@ func main() {
 	}
 	defer pgStore.Close()
 
-	aircraftSources := []enricher.NamedAircraftLookup{
-		{Name: "hexdb", Lookup: hexdbClient},
-		{Name: "opensky", Lookup: opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)},
+	oskyLookupClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
+	aircraftSources := []enricher.NamedSource[aircraft.Info]{
+		{Name: "hexdb", Fn: hexdbClient.Lookup},
+		{Name: "opensky", Fn: oskyLookupClient.Lookup},
 	}
 
-	var routeSources []enricher.NamedRouteLookup
+	var routeSources []enricher.NamedSource[route.Info]
 	if cfg.AirLabs != nil && cfg.AirLabs.APIKey != "" {
-		routeSources = append(routeSources, enricher.NamedRouteLookup{
-			Name: "airlabs", Lookup: airlabs.NewClient(cfg.AirLabs.APIKey),
+		routeSources = append(routeSources, enricher.NamedSource[route.Info]{
+			Name: "airlabs", Fn: airlabs.NewClient(cfg.AirLabs.APIKey).LookupRoute,
 		})
 		slog.InfoContext(ctx, "airlabs route enrichment enabled")
 	}
 	if cfg.FlightAware != nil && cfg.FlightAware.APIKey != "" {
-		routeSources = append(routeSources, enricher.NamedRouteLookup{
-			Name: "flightaware", Lookup: flightaware.NewClient(cfg.FlightAware.APIKey),
+		routeSources = append(routeSources, enricher.NamedSource[route.Info]{
+			Name: "flightaware", Fn: flightaware.NewClient(cfg.FlightAware.APIKey).LookupRoute,
 		})
 		slog.InfoContext(ctx, "flightaware route enrichment enabled")
 	}
