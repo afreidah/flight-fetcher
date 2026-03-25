@@ -53,7 +53,16 @@ type PostgresStore struct {
 // migrations, and returns a ready-to-use store. The routeTTL controls how
 // long cached routes are considered fresh (0 uses DefaultRouteTTL).
 func NewPostgresStore(ctx context.Context, dsn string, routeTTL time.Duration) (*PostgresStore, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("parsing dsn: %w", err)
+	}
+	poolCfg.MaxConns = 10
+	poolCfg.MinConns = 2
+	poolCfg.MaxConnLifetime = 30 * time.Minute
+	poolCfg.HealthCheckPeriod = 30 * time.Second
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("creating connection pool: %w", err)
 	}
