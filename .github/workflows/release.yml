@@ -1,0 +1,37 @@
+# -------------------------------------------------------------------------------
+# Release Workflow - GitHub Actions
+#
+# Project: Flight Fetcher / Author: Alex Freidah
+#
+# Builds cross-platform binaries and creates a GitHub Release when a version
+# tag is pushed. Uses GoReleaser for build, archive, and release management.
+# -------------------------------------------------------------------------------
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
