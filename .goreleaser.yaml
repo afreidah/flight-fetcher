@@ -3,32 +3,48 @@
 #
 # Project: Flight Fetcher / Author: Alex Freidah
 #
-# Builds cross-platform binaries and creates GitHub Releases on tag push.
-# Triggered by the release.yml GitHub Actions workflow.
+# Produces GitHub Release artifacts on tag push: statically linked binaries
+# and SHA256 checksums. Triggered by the release.yml GitHub Actions workflow.
 # -------------------------------------------------------------------------------
 
 version: 2
 
 builds:
-  - env:
-      - CGO_ENABLED=0
-    main: ./cmd/server
+  - main: ./cmd/server
     binary: flight-fetcher
-    ldflags:
-      - -s -w -X main.Version={{ .Version }}
+    env:
+      - CGO_ENABLED=0
     goos:
       - linux
       - darwin
     goarch:
       - amd64
       - arm64
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
 
 archives:
-  - format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
 checksum:
-  name_template: "checksums.txt"
+  name_template: checksums.txt
 
 changelog:
-  use: github-native
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))?\!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\(.+\))?\!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: afreidah
+    name: flight-fetcher
