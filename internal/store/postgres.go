@@ -29,6 +29,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // -------------------------------------------------------------------------
@@ -43,6 +46,7 @@ type PostgresStore struct {
 	pool     *pgxpool.Pool
 	queries  *db.Queries
 	routeTTL time.Duration
+	tracer   trace.Tracer
 }
 
 // -------------------------------------------------------------------------
@@ -83,18 +87,35 @@ func NewPostgresStore(ctx context.Context, dsn string, routeTTL time.Duration) (
 		pool:     pool,
 		queries:  db.New(pool),
 		routeTTL: routeTTL,
+		tracer:   otel.Tracer("flight-fetcher/postgres"),
 	}, nil
+}
+
+// startSpan creates a child span and returns the updated context and end
+// function. The end function records any non-nil error on the span.
+func (p *PostgresStore) startSpan(ctx context.Context, name string) (context.Context, func(error)) {
+	ctx, span := p.tracer.Start(ctx, "postgres."+name)
+	return ctx, func(err error) {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}
 }
 
 // SaveAircraftMeta caches aircraft metadata, upserting by ICAO24.
 func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *hexdb.AircraftInfo) error {
-	return p.queries.UpsertAircraftMeta(ctx, db.UpsertAircraftMetaParams{
+	ctx, endSpan := p.startSpan(ctx, "SaveAircraftMeta")
+	err := p.queries.UpsertAircraftMeta(ctx, db.UpsertAircraftMetaParams{
 		Icao24:       info.ICAO24,
 		Registration: info.Registration,
 		Manufacturer: info.ManufacturerName,
 		Type:         info.Type,
 		Operator:     info.OperatorFlagCode,
 	})
+	endSpan(err)
+	return err
 }
 
 // GetAircraftMeta retrieves cached aircraft metadata by ICAO24. Returns nil
@@ -119,7 +140,8 @@ func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*he
 // LogSighting records a historical sighting of an aircraft at a given
 // position and distance from the configured center point.
 func (p *PostgresStore) LogSighting(ctx context.Context, icao24 string, lat, lon, distanceKm float64) error {
-	return p.queries.LogSighting(ctx, db.LogSightingParams{
+	ctx, endSpan := p.startSpan(ctx, "LogSighting")
+	err := p.queries.LogSighting(ctx, db.LogSightingParams{
 		Icao24:     icao24,
 		Lat:        lat,
 		Lon:        lon,
@@ -129,11 +151,14 @@ func (p *PostgresStore) LogSighting(ctx context.Context, icao24 string, lat, lon
 			Valid: true,
 		},
 	})
+	endSpan(err)
+	return err
 }
 
 // SaveFlightRoute caches flight route information, upserting by callsign.
 func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *route.Info) error {
-	return p.queries.UpsertFlightRoute(ctx, db.UpsertFlightRouteParams{
+	ctx, endSpan := p.startSpan(ctx, "SaveFlightRoute")
+	err := p.queries.UpsertFlightRoute(ctx, db.UpsertFlightRouteParams{
 		Callsign: route.FlightICAO,
 		DepIata:  route.DepIATA,
 		DepIcao:  route.DepICAO,
@@ -142,6 +167,8 @@ func (p *PostgresStore) SaveFlightRoute(ctx context.Context, route *route.Info) 
 		ArrIcao:  route.ArrICAO,
 		ArrName:  route.ArrName,
 	})
+	endSpan(err)
+	return err
 }
 
 // GetFlightRoute retrieves cached route information by callsign. Returns nil
@@ -180,7 +207,8 @@ func (p *PostgresStore) HasRecentSquawkAlert(ctx context.Context, icao24, squawk
 
 // InsertSquawkAlert records an emergency squawk detection.
 func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign, squawk string, lat, lon float64) error {
-	return p.queries.InsertSquawkAlert(ctx, db.InsertSquawkAlertParams{
+	ctx, endSpan := p.startSpan(ctx, "InsertSquawkAlert")
+	err := p.queries.InsertSquawkAlert(ctx, db.InsertSquawkAlertParams{
 		Icao24:   icao24,
 		Callsign: callsign,
 		Squawk:   squawk,
@@ -191,6 +219,8 @@ func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign,
 			Valid: true,
 		},
 	})
+	endSpan(err)
+	return err
 }
 
 // GetRecentSquawkAlerts returns squawk alerts from the last given duration.

@@ -36,6 +36,7 @@ type Client struct {
 func NewClient() *Client {
 	return &Client{
 		Client: apiclient.New(apiclient.Options{
+			Name:    "hexdb",
 			BaseURL: "https://hexdb.io/api/v1",
 		}),
 	}

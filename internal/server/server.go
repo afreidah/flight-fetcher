@@ -22,6 +22,9 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // -------------------------------------------------------------------------
@@ -102,6 +105,7 @@ func New(opts *Options) *Server {
 	s.mux.HandleFunc("GET /api/aircraft/{icao24}", s.handleGetAircraft)
 	s.mux.HandleFunc("GET /api/routes/{callsign}", s.handleGetRoute)
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.Handle("GET /metrics", promhttp.Handler())
 	return s
 }
 
@@ -110,7 +114,7 @@ func New(opts *Options) *Server {
 func (s *Server) ListenAndServe(ctx context.Context, addr string) {
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           s.mux,
+		Handler:           otelhttp.NewHandler(s.mux, "flight-fetcher"),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,

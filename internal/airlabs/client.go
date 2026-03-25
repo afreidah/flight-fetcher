@@ -44,6 +44,7 @@ type apiResponse struct {
 func NewClient(apiKey string) *Client {
 	return &Client{
 		Client: apiclient.New(apiclient.Options{
+			Name:    "airlabs",
 			BaseURL: "https://airlabs.co/api/v9",
 		}),
 		apiKey: apiKey,
