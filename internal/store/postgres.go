@@ -76,7 +76,7 @@ func NewPostgresStore(ctx context.Context, dsn string, routeTTL time.Duration) (
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 
-	if err := runMigrations(dsn); err != nil {
+	if err := runMigrations(ctx, dsn); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("running migrations: %w", err)
 	}
@@ -314,7 +314,7 @@ func (p *PostgresStore) Close() {
 
 // runMigrations opens a standard database/sql connection and applies any
 // pending goose migrations from the embedded migration files.
-func runMigrations(dsn string) error {
+func runMigrations(ctx context.Context, dsn string) error {
 	stdDB, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return fmt.Errorf("opening migration connection: %w", err)
@@ -326,7 +326,6 @@ func runMigrations(dsn string) error {
 		return fmt.Errorf("creating migration provider: %w", err)
 	}
 
-	ctx := context.Background()
 	results, err := provider.Up(ctx)
 	if err != nil {
 		return fmt.Errorf("applying migrations: %w", err)

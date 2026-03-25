@@ -193,6 +193,29 @@ func TestDo_ClientError_NoBackoff(t *testing.T) {
 	resp.Body.Close()
 }
 
+// TestDo_RateLimitWithRetryAfter verifies that a 429 with Retry-After header
+// uses the server-specified duration instead of exponential backoff.
+func TestDo_RateLimitWithRetryAfter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	c := New(Options{BaseURL: srv.URL})
+
+	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
+	_, err := c.Do(req)
+	if err == nil {
+		t.Fatal("Do() expected error for 429, got nil")
+	}
+
+	// Backoff should be set to 120s from Retry-After, not the default 30s
+	if c.backoff != 120*time.Second {
+		t.Errorf("backoff = %v, want 2m0s (from Retry-After header)", c.backoff)
+	}
+}
+
 // TestDo_BackoffEscalates verifies that repeated 429s double the backoff up to max.
 func TestDo_BackoffEscalates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -279,5 +302,25 @@ func TestDecodeJSON_BodySizeLimit(t *testing.T) {
 	}
 	if err := c.DecodeJSON(body, &result); err == nil {
 		t.Error("DecodeJSON() expected error for oversized body, got nil")
+	}
+}
+
+// TestParseRetryAfter verifies Retry-After header parsing.
+func TestParseRetryAfter(t *testing.T) {
+	tests := []struct {
+		input string
+		want  time.Duration
+	}{
+		{"60", 60 * time.Second},
+		{"0", 0},
+		{"-1", 0},
+		{"", 0},
+		{"not-a-number", 0},
+	}
+	for _, tt := range tests {
+		got := parseRetryAfter(tt.input)
+		if got != tt.want {
+			t.Errorf("parseRetryAfter(%q) = %v, want %v", tt.input, got, tt.want)
+		}
 	}
 }
