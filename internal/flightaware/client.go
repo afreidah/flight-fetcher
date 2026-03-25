@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -54,9 +55,9 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info,
 		return nil, nil
 	}
 
-	url := fmt.Sprintf("%s/flights/%s", c.baseURL, callsign)
+	reqURL := fmt.Sprintf("%s/flights/%s", c.baseURL, url.PathEscape(callsign))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

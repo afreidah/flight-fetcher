@@ -13,6 +13,7 @@ package server
 import (
 	_ "embed"
 	"fmt"
+	"html"
 	"strings"
 )
 
@@ -22,7 +23,7 @@ var indexHTML string
 // renderedHTML returns the index page with placeholders replaced.
 func renderedHTML(version string, refreshSec int) []byte {
 	r := strings.NewReplacer(
-		"{{VERSION}}", version,
+		"{{VERSION}}", html.EscapeString(version),
 		"{{REFRESH}}", fmt.Sprintf("%d", refreshSec),
 	)
 	return []byte(r.Replace(indexHTML))
