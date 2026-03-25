@@ -12,8 +12,6 @@ package airlabs
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -63,30 +61,12 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info,
 		"flight_icao": {callsign},
 		"api_key":     {c.apiKey},
 	}
-	req, err := c.NewRequest(ctx, http.MethodGet, "/flight?"+params.Encode(), nil)
-	if err != nil {
+	result, err := apiclient.Lookup[apiResponse](c.Client, ctx, "/flight?"+params.Encode())
+	if err != nil || result == nil {
 		return nil, err
 	}
-
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
-	}
-
-	var result apiResponse
-	if err := c.DecodeJSON(resp.Body, &result); err != nil {
-		return nil, err
-	}
-
-	// Empty response when flight not found
 	if result.Response.FlightICAO == "" {
 		return nil, nil
 	}
-
 	return &result.Response, nil
 }

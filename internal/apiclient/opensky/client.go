@@ -129,36 +129,17 @@ type metadataResponse struct {
 }
 
 // Lookup fetches aircraft metadata from the OpenSky metadata endpoint.
-// Returns nil if the aircraft is not found or has no useful data. Satisfies
-// the enricher.AircraftLookup interface for use as a fallback source.
+// Returns nil if the aircraft is not found or has no useful data.
 func (c *Client) Lookup(ctx context.Context, icao24 string) (*aircraft.Info, error) {
-	req, err := c.NewRequest(ctx, http.MethodGet, "/metadata/aircraft/icao/"+url.PathEscape(icao24), nil)
-	if err != nil {
-		return nil, err
-	}
-	c.addAuth(ctx, req)
-
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
-	}
-
-	var meta metadataResponse
-	if err := c.DecodeJSON(resp.Body, &meta); err != nil {
+	meta, err := apiclient.Lookup[metadataResponse](c.Client, ctx,
+		"/metadata/aircraft/icao/"+url.PathEscape(icao24),
+		func(req *http.Request) { c.addAuth(ctx, req) })
+	if err != nil || meta == nil {
 		return nil, err
 	}
 	if meta.Registration == "" && meta.Model == "" {
 		return nil, nil
 	}
-
 	return &aircraft.Info{
 		ICAO24:           icao24,
 		Registration:     meta.Registration,

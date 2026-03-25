@@ -12,7 +12,6 @@ package flightaware
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,38 +46,19 @@ func NewClient(apiKey string) *Client {
 }
 
 // LookupRoute fetches route information for a flight by callsign (ident).
-// Returns a route.Info for compatibility with the existing enricher
-// interface. Returns nil if the flight is not found.
+// Returns nil if the flight is not found.
 func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info, error) {
 	callsign = strings.TrimSpace(callsign)
 	if callsign == "" {
 		return nil, nil
 	}
 
-	req, err := c.NewRequest(ctx, http.MethodGet, "/flights/"+url.PathEscape(callsign), nil)
-	if err != nil {
+	result, err := apiclient.Lookup[flightsResponse](c.Client, ctx,
+		"/flights/"+url.PathEscape(callsign),
+		func(req *http.Request) { req.Header.Set("x-apikey", c.apiKey) })
+	if err != nil || result == nil {
 		return nil, err
 	}
-	req.Header.Set("x-apikey", c.apiKey)
-
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
-	}
-
-	var result flightsResponse
-	if err := c.DecodeJSON(resp.Body, &result); err != nil {
-		return nil, err
-	}
-
 	if len(result.Flights) == 0 {
 		return nil, nil
 	}

@@ -197,6 +197,42 @@ func (c *Client) DecodeJSON(r io.Reader, v any) error {
 	return nil
 }
 
+// RequestOption modifies a request before it is sent. Used to set
+// authentication headers or other per-request configuration.
+type RequestOption func(*http.Request)
+
+// Lookup performs a GET request to path, decodes the JSON response into T,
+// and returns the result. Returns (nil, nil) on 404. Any RequestOption
+// callbacks are applied to the request before sending (e.g. for auth headers).
+func Lookup[T any](c *Client, ctx context.Context, path string, opts ...RequestOption) (*T, error) {
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, opt := range opts {
+		opt(req)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var result T
+	if err := c.DecodeJSON(resp.Body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // -------------------------------------------------------------------------
 // INTERNALS
 // -------------------------------------------------------------------------
