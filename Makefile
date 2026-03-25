@@ -53,8 +53,11 @@ govulncheck: ## Scan Go dependencies for known vulnerabilities
 lint: ## Run Go linter
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1 run ./...
 
-test: ## Run Go tests with coverage
-	go test -race -cover ./...
+test: ## Run unit tests with coverage (skips integration tests)
+	go test -short -race -cover ./...
+
+test-integration: ## Run integration tests (requires Docker)
+	go test -race -count=1 -timeout=5m ./internal/store/...
 
 build: ## Build the flight-fetcher binary
 	CGO_ENABLED=0 go build -ldflags="$(GO_LDFLAGS)" -o flight-fetcher ./cmd/server

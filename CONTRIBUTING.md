@@ -28,13 +28,14 @@ make build
 ## Running Tests
 
 ```bash
-make test          # unit tests with race detector and coverage
-make lint          # golangci-lint
-make vet           # Go vet static analysis
-make govulncheck   # vulnerability scanner
+make test               # unit tests (skips integration tests)
+make test-integration   # integration tests against real Postgres + Redis (requires Docker)
+make lint               # golangci-lint
+make vet                # Go vet static analysis
+make govulncheck        # vulnerability scanner
 ```
 
-All tests must pass before submitting a PR.
+All unit tests and lint must pass before submitting a PR. Integration tests run in CI automatically but can also be run locally with Docker installed.
 
 ## Code Generation
 
