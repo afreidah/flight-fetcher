@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
@@ -28,7 +29,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-//go:generate mockgen -destination mock_poller_test.go -package poller github.com/afreidah/flight-fetcher/internal/poller FlightSource,FlightCache,SightingLogger,FlightEnricher
+//go:generate mockgen -destination mock_poller_test.go -package poller github.com/afreidah/flight-fetcher/internal/poller FlightSource,FlightCache,SightingLogger
+//go:generate mockgen -destination mock_enricher_test.go -package poller github.com/afreidah/flight-fetcher/internal/enricher Interface
 
 // -------------------------------------------------------------------------
 // INTERFACES
@@ -49,11 +51,6 @@ type SightingLogger interface {
 	LogSighting(ctx context.Context, icao24 string, lat, lon, distanceKm float64) error
 }
 
-// FlightEnricher enriches aircraft metadata and flight route information.
-type FlightEnricher interface {
-	Enrich(ctx context.Context, icao24 string) bool
-	EnrichRoute(ctx context.Context, callsign string) bool
-}
 
 // -------------------------------------------------------------------------
 // CONSTANTS
@@ -79,7 +76,7 @@ type Options struct {
 	Source        FlightSource
 	Cache         FlightCache
 	Logger        SightingLogger
-	Enricher      FlightEnricher
+	Enricher      enricher.Interface
 	Center        geo.Coord
 	RadiusKm      float64
 	Interval      time.Duration

@@ -48,7 +48,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
 	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockFlightEnricher(ctrl)
+	enricher := NewMockInterface(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 	radiusKm := 10.0
@@ -91,7 +91,7 @@ func TestPoll_SourceError(t *testing.T) {
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
 	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockFlightEnricher(ctrl)
+	enricher := NewMockInterface(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -109,7 +109,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
 	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockFlightEnricher(ctrl)
+	enricher := NewMockInterface(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -146,7 +146,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
 	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockFlightEnricher(ctrl)
+	enricher := NewMockInterface(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -183,7 +183,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
 	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockFlightEnricher(ctrl)
+	enricher := NewMockInterface(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -227,7 +227,7 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
 	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockFlightEnricher(ctrl)
+	enricher := NewMockInterface(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -274,7 +274,7 @@ func TestPoll_EmptyResponse(t *testing.T) {
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
 	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockFlightEnricher(ctrl)
+	enricher := NewMockInterface(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 

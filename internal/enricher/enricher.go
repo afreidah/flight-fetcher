@@ -55,6 +55,13 @@ type Options struct {
 	RouteStore      RouteStore
 }
 
+// Interface is satisfied by Enricher and describes the enrichment
+// operations consumed by the poller and squawk monitor.
+type Interface interface {
+	Enrich(ctx context.Context, icao24 string) bool
+	EnrichRoute(ctx context.Context, callsign string) bool
+}
+
 // Enricher looks up and caches aircraft metadata and flight route information.
 type Enricher struct {
 	opts Options
