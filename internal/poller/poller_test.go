@@ -4,7 +4,7 @@
 // Project: Flight Fetcher / Author: Alex Freidah
 //
 // Tests the polling loop logic: radius filtering, error handling for each
-// dependency, and correct delegation to cache, logger, and enricher.
+// dependency, async enrichment via worker pool, and eviction of seen maps.
 // -------------------------------------------------------------------------------
 
 package poller
@@ -12,6 +12,7 @@ package poller
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,26 @@ import (
 
 	"go.uber.org/mock/gomock"
 )
+
+// pollAndDrain runs a single poll cycle and drains the enrichment queue
+// by starting workers, then waits for all enrichment to complete.
+func pollAndDrain(p *Poller, ctx context.Context) {
+	p.poll(ctx)
+
+	var wg sync.WaitGroup
+	for range enrichWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.enrichWorker(ctx)
+		}()
+	}
+	close(p.enrichCh)
+	wg.Wait()
+
+	// Reset the channel for subsequent calls
+	p.enrichCh = make(chan enrichRequest, enrichQueueSize)
+}
 
 // TestPoll_FiltersByRadius verifies that only aircraft within the configured radius are processed.
 func TestPoll_FiltersByRadius(t *testing.T) {
@@ -61,7 +82,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 		Times(1)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: radiusKm, Interval: time.Minute, EvictInterval: time.Hour})
-	p.poll(context.Background())
+	pollAndDrain(p, context.Background())
 }
 
 // TestPoll_SourceError verifies that a failed API call logs a warning and returns without processing.
@@ -79,7 +100,7 @@ func TestPoll_SourceError(t *testing.T) {
 		Return(nil, errors.New("api down"))
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
-	p.poll(context.Background())
+	pollAndDrain(p, context.Background())
 }
 
 // TestPoll_CacheError_ContinuesProcessing verifies that a Redis failure does not stop sighting logging or enrichment.
@@ -112,10 +133,11 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 		Enrich(gomock.Any(), "abc123").
 		Return(true)
 	enricher.EXPECT().
-		EnrichRoute(gomock.Any(), gomock.Any())
+		EnrichRoute(gomock.Any(), gomock.Any()).
+		Return(true)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
-	p.poll(context.Background())
+	pollAndDrain(p, context.Background())
 }
 
 // TestPoll_LoggerError_ContinuesProcessing verifies that a Postgres sighting log failure does not stop enrichment.
@@ -148,10 +170,11 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 		Enrich(gomock.Any(), "abc123").
 		Return(true)
 	enricher.EXPECT().
-		EnrichRoute(gomock.Any(), gomock.Any())
+		EnrichRoute(gomock.Any(), gomock.Any()).
+		Return(true)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
-	p.poll(context.Background())
+	pollAndDrain(p, context.Background())
 }
 
 // TestPoll_SkipsEnrichmentOnSecondCycle verifies that already-seen aircraft are not re-enriched.
@@ -193,8 +216,9 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 		Times(1)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
-	p.poll(context.Background())
-	p.poll(context.Background())
+	pollAndDrain(p, context.Background())
+	// Second poll — enrichment should be skipped since already seen
+	pollAndDrain(p, context.Background())
 }
 
 // TestPoll_EvictsSeenMapsAfterInterval verifies that seen maps are cleared after the eviction interval.
@@ -239,9 +263,9 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 
 	// Use nanosecond eviction so it triggers on every poll after the first
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Nanosecond})
-	p.poll(context.Background()) // enriches, marks seen
-	time.Sleep(time.Millisecond)
-	p.poll(context.Background()) // eviction fires, clears maps, re-enriches
+	pollAndDrain(p, context.Background())
+	p.lastEvict = time.Time{} // force eviction on next poll
+	pollAndDrain(p, context.Background())
 }
 
 // TestPoll_EmptyResponse verifies that an empty states response completes without errors.
@@ -259,5 +283,5 @@ func TestPoll_EmptyResponse(t *testing.T) {
 		Return(&opensky.StatesResponse{Time: 1234, States: nil}, nil)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
-	p.poll(context.Background())
+	pollAndDrain(p, context.Background())
 }

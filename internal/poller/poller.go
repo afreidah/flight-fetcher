@@ -5,8 +5,8 @@
 //
 // Runs on a configurable interval, querying the OpenSky Network API for
 // aircraft within a bounding box, filtering by haversine distance, storing
-// current state in Redis, logging sightings to Postgres, and triggering
-// enrichment for newly seen aircraft.
+// current state in Redis, and logging sightings to Postgres. Enrichment of
+// newly seen aircraft is handled asynchronously by a background worker pool.
 // -------------------------------------------------------------------------------
 
 package poller
@@ -15,6 +15,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -50,8 +51,23 @@ type FlightEnricher interface {
 }
 
 // -------------------------------------------------------------------------
+// CONSTANTS
+// -------------------------------------------------------------------------
+
+const (
+	enrichWorkers   = 5
+	enrichQueueSize = 500
+)
+
+// -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
+
+// enrichRequest is a unit of work for the enrichment worker pool.
+type enrichRequest struct {
+	icao24   string
+	callsign string
+}
 
 // Options holds the dependencies and configuration for the poller.
 type Options struct {
@@ -68,6 +84,9 @@ type Options struct {
 // Poller periodically queries a flight source for aircraft near a fixed location.
 type Poller struct {
 	opts       Options
+	enrichCh   chan enrichRequest
+
+	mu         sync.Mutex
 	seenICAO   map[string]bool
 	seenRoutes map[string]bool
 	lastEvict  time.Time
@@ -81,19 +100,34 @@ type Poller struct {
 func New(opts *Options) *Poller {
 	return &Poller{
 		opts:       *opts,
+		enrichCh:   make(chan enrichRequest, enrichQueueSize),
 		seenICAO:   make(map[string]bool),
 		seenRoutes: make(map[string]bool),
 		lastEvict:  time.Now(),
 	}
 }
 
-// Run starts the polling loop. Blocks until ctx is cancelled.
+// Run starts the polling loop and enrichment worker pool. Blocks until
+// ctx is cancelled.
 func (p *Poller) Run(ctx context.Context) {
 	slog.InfoContext(ctx, "poller config",
 		slog.Float64("lat", p.opts.Center.Lat),
 		slog.Float64("lon", p.opts.Center.Lon),
 		slog.Float64("radius_km", p.opts.RadiusKm))
+
+	var wg sync.WaitGroup
+	for range enrichWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.enrichWorker(ctx)
+		}()
+	}
+
 	runloop.Run(ctx, "poller", p.opts.Interval, p.poll)
+
+	close(p.enrichCh)
+	wg.Wait()
 }
 
 // -------------------------------------------------------------------------
@@ -101,8 +135,9 @@ func (p *Poller) Run(ctx context.Context) {
 // -------------------------------------------------------------------------
 
 // poll executes a single poll cycle: query source, filter by distance,
-// store state, log sightings, and enrich new aircraft.
+// store state, log sightings, and submit enrichment requests.
 func (p *Poller) poll(ctx context.Context) {
+	p.mu.Lock()
 	if time.Since(p.lastEvict) >= p.opts.EvictInterval {
 		slog.InfoContext(ctx, "evicting enrichment cache",
 			slog.Int("icao_count", len(p.seenICAO)),
@@ -111,6 +146,7 @@ func (p *Poller) poll(ctx context.Context) {
 		p.seenRoutes = make(map[string]bool)
 		p.lastEvict = time.Now()
 	}
+	p.mu.Unlock()
 
 	bbox := geo.BBoxAround(p.opts.Center, p.opts.RadiusKm)
 	resp, err := p.opts.Source.GetStates(ctx, bbox)
@@ -138,14 +174,21 @@ func (p *Poller) poll(ctx context.Context) {
 				slog.String("error", err.Error()))
 		}
 
-		if !p.seenICAO[sv.ICAO24] {
-			if p.opts.Enricher.Enrich(ctx, sv.ICAO24) {
-				p.seenICAO[sv.ICAO24] = true
-			}
+		callsign := strings.TrimSpace(sv.Callsign)
+		needsEnrich := false
+
+		p.mu.Lock()
+		if !p.seenICAO[sv.ICAO24] || (callsign != "" && !p.seenRoutes[callsign]) {
+			needsEnrich = true
 		}
-		if callsign := strings.TrimSpace(sv.Callsign); callsign != "" && !p.seenRoutes[callsign] {
-			if p.opts.Enricher.EnrichRoute(ctx, callsign) {
-				p.seenRoutes[callsign] = true
+		p.mu.Unlock()
+
+		if needsEnrich {
+			select {
+			case p.enrichCh <- enrichRequest{icao24: sv.ICAO24, callsign: callsign}:
+			default:
+				slog.WarnContext(ctx, "enrichment queue full, skipping",
+					slog.String("icao24", sv.ICAO24))
 			}
 		}
 		count++
@@ -154,4 +197,34 @@ func (p *Poller) poll(ctx context.Context) {
 	slog.InfoContext(ctx, "poll complete",
 		slog.Int("aircraft_count", count),
 		slog.Float64("radius_km", p.opts.RadiusKm))
+}
+
+// enrichWorker drains the enrichment channel, calling the enricher for
+// each request and marking successful enrichments as seen.
+func (p *Poller) enrichWorker(ctx context.Context) {
+	for req := range p.enrichCh {
+		if ctx.Err() != nil {
+			return
+		}
+
+		p.mu.Lock()
+		needICAO := !p.seenICAO[req.icao24]
+		needRoute := req.callsign != "" && !p.seenRoutes[req.callsign]
+		p.mu.Unlock()
+
+		if needICAO {
+			if p.opts.Enricher.Enrich(ctx, req.icao24) {
+				p.mu.Lock()
+				p.seenICAO[req.icao24] = true
+				p.mu.Unlock()
+			}
+		}
+		if needRoute {
+			if p.opts.Enricher.EnrichRoute(ctx, req.callsign) {
+				p.mu.Lock()
+				p.seenRoutes[req.callsign] = true
+				p.mu.Unlock()
+			}
+		}
+	}
 }
