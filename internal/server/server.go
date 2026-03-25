@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/hexdb"
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
@@ -39,7 +39,7 @@ type FlightLister interface {
 
 // AircraftMetaReader retrieves cached aircraft metadata by ICAO24.
 type AircraftMetaReader interface {
-	GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error)
+	GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error)
 }
 
 // RouteReader retrieves cached flight route information by callsign.
@@ -83,7 +83,7 @@ type Server struct {
 // flightDetail combines live state, enriched metadata, and route information.
 type flightDetail struct {
 	State    *opensky.StateVector `json:"state"`
-	Aircraft *hexdb.AircraftInfo  `json:"aircraft,omitempty"`
+	Aircraft *aircraft.Info  `json:"aircraft,omitempty"`
 	Route    *route.Info `json:"route,omitempty"`
 }
 

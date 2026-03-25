@@ -3,28 +3,13 @@
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// Defines the response types for the HexDB.io aircraft metadata API. Lookups
-// are keyed by ICAO24 hex code and return static aircraft registration data.
+// Maps HexDB.io API responses to the shared aircraft domain type.
 // -------------------------------------------------------------------------------
 
 package hexdb
 
-// -------------------------------------------------------------------------
-// TYPES
-// -------------------------------------------------------------------------
+import "github.com/afreidah/flight-fetcher/internal/aircraft"
 
-// AircraftInfo contains metadata about an aircraft looked up by ICAO24 hex
-// code from HexDB.io.
-type AircraftInfo struct {
-	ICAO24           string `json:"icao24"`
-	Registration     string `json:"Registration"`
-	ManufacturerName string `json:"ManufacturerName"`
-	Type             string `json:"Type"`
-	OperatorFlagCode string `json:"OperatorFlagCode"`
-}
-
-// IsSentinel returns true if the record is a negative cache entry with no
-// actual metadata.
-func (a *AircraftInfo) IsSentinel() bool {
-	return a.Registration == "" && a.ManufacturerName == "" && a.Type == ""
-}
+// AircraftInfo is an alias for the shared domain type, maintained for
+// backward compatibility with the HexDB client's Lookup return type.
+type AircraftInfo = aircraft.Info

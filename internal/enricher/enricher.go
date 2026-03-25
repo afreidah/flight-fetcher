@@ -15,7 +15,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/afreidah/flight-fetcher/internal/hexdb"
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
@@ -27,13 +27,13 @@ import (
 
 // AircraftStore reads and writes cached aircraft metadata.
 type AircraftStore interface {
-	GetAircraftMeta(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error)
-	SaveAircraftMeta(ctx context.Context, info *hexdb.AircraftInfo) error
+	GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error)
+	SaveAircraftMeta(ctx context.Context, info *aircraft.Info) error
 }
 
 // AircraftLookup fetches aircraft metadata from an external source.
 type AircraftLookup interface {
-	Lookup(ctx context.Context, icao24 string) (*hexdb.AircraftInfo, error)
+	Lookup(ctx context.Context, icao24 string) (*aircraft.Info, error)
 }
 
 // RouteStore reads and writes cached flight route information.
@@ -103,7 +103,7 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 	if info == nil {
 		slog.InfoContext(ctx, "no hexdb data found",
 			slog.String("icao24", icao24))
-		sentinel := &hexdb.AircraftInfo{ICAO24: icao24}
+		sentinel := &aircraft.Info{ICAO24: icao24}
 		if err := e.opts.Store.SaveAircraftMeta(ctx, sentinel); err != nil {
 			slog.WarnContext(ctx, "failed to save aircraft sentinel",
 				slog.String("icao24", icao24),
