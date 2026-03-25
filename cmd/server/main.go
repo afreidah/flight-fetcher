@@ -38,12 +38,18 @@ import (
 var Version = "dev"
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})))
-
 	configPath := flag.String("config", "config.hcl", "path to config file")
+	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	flag.Parse()
+
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(*logLevel)); err != nil {
+		slog.ErrorContext(context.Background(), "invalid log level", slog.String("level", *logLevel), slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	})))
 
 	ctx := context.Background()
 

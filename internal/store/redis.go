@@ -47,9 +47,14 @@ type RedisStore struct {
 func NewRedisStore(addr, password string, db int, ttl time.Duration) *RedisStore {
 	return &RedisStore{
 		client: redis.NewClient(&redis.Options{
-			Addr:     addr,
-			Password: password,
-			DB:       db,
+			Addr:         addr,
+			Password:     password,
+			DB:           db,
+			DialTimeout:  5 * time.Second,
+			ReadTimeout:  3 * time.Second,
+			WriteTimeout: 3 * time.Second,
+			PoolSize:     10,
+			MinIdleConns: 2,
 		}),
 		ttl: ttl,
 	}
