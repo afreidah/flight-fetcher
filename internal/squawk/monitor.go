@@ -20,6 +20,10 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // -------------------------------------------------------------------------
@@ -103,8 +107,14 @@ func globalBBox() geo.BBox {
 
 // scan executes a single global poll, filtering for emergency squawk codes.
 func (m *Monitor) scan(ctx context.Context) {
+	tracer := otel.Tracer("flight-fetcher/squawk")
+	ctx, span := tracer.Start(ctx, "squawk.scan")
+	defer span.End()
+
 	resp, err := m.source.GetStates(ctx, globalBBox())
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "squawk scan failed")
 		slog.WarnContext(ctx, "squawk scan failed",
 			slog.String("error", err.Error()))
 		return
@@ -150,6 +160,10 @@ func (m *Monitor) scan(ctx context.Context) {
 
 		count++
 	}
+
+	span.SetAttributes(
+		attribute.Int("total_aircraft", len(resp.States)),
+		attribute.Int("emergency_count", count))
 
 	slog.InfoContext(ctx, "squawk scan complete",
 		slog.Int("total_aircraft", len(resp.States)),

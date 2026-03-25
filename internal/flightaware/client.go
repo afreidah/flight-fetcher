@@ -39,6 +39,7 @@ type Client struct {
 func NewClient(apiKey string) *Client {
 	return &Client{
 		Client: apiclient.New(apiclient.Options{
+			Name:    "flightaware",
 			BaseURL: "https://aeroapi.flightaware.com/aeroapi",
 		}),
 		apiKey: apiKey,

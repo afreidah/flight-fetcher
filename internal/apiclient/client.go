@@ -5,8 +5,8 @@
 //
 // Provides common HTTP client functionality for external API integrations:
 // request construction with base URL, exponential backoff on 429 responses,
-// response body size limiting, and JSON decoding. Embedded by each API-specific
-// client to avoid duplicating these concerns.
+// response body size limiting, JSON decoding, and OpenTelemetry tracing and
+// metrics. Embedded by each API-specific client.
 // -------------------------------------------------------------------------------
 
 package apiclient
@@ -18,8 +18,15 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // -------------------------------------------------------------------------
@@ -27,11 +34,11 @@ import (
 // -------------------------------------------------------------------------
 
 const (
-	defaultTimeout  = 10 * time.Second
-	defaultMaxBody  = 1 * 1024 * 1024 // 1MB
-	initialBackoff  = 30 * time.Second
-	maxBackoff      = 10 * time.Minute
-	backoffFactor   = 2
+	defaultTimeout = 10 * time.Second
+	defaultMaxBody = 1 * 1024 * 1024 // 1MB
+	initialBackoff = 30 * time.Second
+	maxBackoff     = 10 * time.Minute
+	backoffFactor  = 2
 )
 
 // -------------------------------------------------------------------------
@@ -40,6 +47,7 @@ const (
 
 // Options configures a new Client.
 type Options struct {
+	Name         string // identifies this client in spans and metrics
 	BaseURL      string
 	Timeout      time.Duration
 	MaxBodyBytes int64
@@ -47,11 +55,17 @@ type Options struct {
 
 // Client provides shared HTTP functionality for external API integrations.
 // Handles exponential backoff on rate limits, response body size limiting,
-// and JSON decoding. Intended to be embedded by API-specific clients.
+// JSON decoding, and OTel instrumentation. Intended to be embedded by
+// API-specific clients.
 type Client struct {
 	httpClient   *http.Client
 	baseURL      string
 	maxBodyBytes int64
+	name         string
+
+	tracer    trace.Tracer
+	reqCount  metric.Int64Counter
+	reqDur    metric.Float64Histogram
 
 	mu          sync.Mutex
 	backoff     time.Duration
@@ -71,10 +85,27 @@ func New(opts Options) *Client {
 	if opts.MaxBodyBytes <= 0 {
 		opts.MaxBodyBytes = defaultMaxBody
 	}
+	if opts.Name == "" {
+		opts.Name = "apiclient"
+	}
+
+	meter := otel.Meter("flight-fetcher/apiclient")
+	reqCount, _ := meter.Int64Counter("apiclient.requests",
+		metric.WithDescription("Total API requests by upstream and status"),
+	)
+	reqDur, _ := meter.Float64Histogram("apiclient.request.duration",
+		metric.WithDescription("API request duration in seconds"),
+		metric.WithUnit("s"),
+	)
+
 	return &Client{
 		httpClient:   &http.Client{Timeout: opts.Timeout},
 		baseURL:      opts.BaseURL,
 		maxBodyBytes: opts.MaxBodyBytes,
+		name:         opts.Name,
+		tracer:       otel.Tracer("flight-fetcher/apiclient"),
+		reqCount:     reqCount,
+		reqDur:       reqDur,
 		backoff:      initialBackoff,
 	}
 }
@@ -92,27 +123,60 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body io.Re
 	return req, nil
 }
 
-// Do executes a request with circuit breaker behavior. Applies exponential
-// backoff on rate limits (429), server errors (5xx), and transport failures
-// (connection refused, timeouts). On these errors the response body is
-// closed and an error is returned. The caller must close resp.Body on
-// success.
+// Do executes a request with circuit breaker behavior and OTel
+// instrumentation. Applies exponential backoff on rate limits (429),
+// server errors (5xx), and transport failures. The caller must close
+// resp.Body on success.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	resp, err := c.httpClient.Do(req)
+	ctx, span := c.tracer.Start(req.Context(), c.name+".request",
+		trace.WithAttributes(
+			attribute.String("http.method", req.Method),
+			attribute.String("http.url", req.URL.Path),
+			attribute.String("upstream", c.name),
+		),
+	)
+	defer span.End()
+
+	start := time.Now()
+	attrs := []attribute.KeyValue{attribute.String("upstream", c.name)}
+
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	dur := time.Since(start).Seconds()
+
 	if err != nil {
-		c.applyBackoff(req.Context())
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "transport error")
+		attrs = append(attrs, attribute.String("status", "error"))
+		c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
+		c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
+		c.applyBackoff(ctx)
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
+
+	statusAttr := attribute.String("status", strconv.Itoa(resp.StatusCode))
+	attrs = append(attrs, statusAttr)
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+
 	if resp.StatusCode == http.StatusTooManyRequests {
 		resp.Body.Close()
-		c.applyBackoff(req.Context())
+		span.SetStatus(codes.Error, "rate limited")
+		c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
+		c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
+		c.applyBackoff(ctx)
 		return nil, fmt.Errorf("rate limited (429), backing off for %s", c.currentBackoff())
 	}
 	if resp.StatusCode >= 500 {
 		resp.Body.Close()
-		c.applyBackoff(req.Context())
+		span.SetStatus(codes.Error, "server error")
+		c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
+		c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
+		c.applyBackoff(ctx)
 		return nil, fmt.Errorf("server error (%d), backing off for %s", resp.StatusCode, c.currentBackoff())
 	}
+
+	span.SetStatus(codes.Ok, "")
+	c.reqCount.Add(ctx, 1, metric.WithAttributes(attrs...))
+	c.reqDur.Record(ctx, dur, metric.WithAttributes(attrs...))
 	c.resetBackoff()
 	return resp, nil
 }

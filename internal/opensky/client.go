@@ -62,6 +62,7 @@ type tokenResponse struct {
 func NewClient(clientID, clientSecret string) *Client {
 	return &Client{
 		Client: apiclient.New(apiclient.Options{
+			Name:         "opensky",
 			BaseURL:      "https://opensky-network.org/api",
 			Timeout:      15 * time.Second,
 			MaxBodyBytes: 50 * 1024 * 1024, // 50MB for global queries

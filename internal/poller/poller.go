@@ -21,6 +21,11 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 )
 
 //go:generate mockgen -destination mock_poller_test.go -package poller github.com/afreidah/flight-fetcher/internal/poller FlightSource,FlightCache,SightingLogger,FlightEnricher
@@ -86,6 +91,11 @@ type Poller struct {
 	opts       Options
 	enrichCh   chan enrichRequest
 
+	pollCount    metric.Int64Counter
+	pollDuration metric.Float64Histogram
+	aircraftGauge metric.Int64Gauge
+	enrichQueue  metric.Int64Gauge
+
 	mu         sync.Mutex
 	seenICAO   map[string]bool
 	seenRoutes map[string]bool
@@ -98,12 +108,27 @@ type Poller struct {
 
 // New creates a Poller with the given options.
 func New(opts *Options) *Poller {
+	meter := otel.Meter("flight-fetcher/poller")
+	pollCount, _ := meter.Int64Counter("poller.polls",
+		metric.WithDescription("Total poll cycles by result"))
+	pollDuration, _ := meter.Float64Histogram("poller.poll.duration",
+		metric.WithDescription("Poll cycle duration in seconds"),
+		metric.WithUnit("s"))
+	aircraftGauge, _ := meter.Int64Gauge("poller.aircraft.count",
+		metric.WithDescription("Aircraft seen in last poll cycle"))
+	enrichQueue, _ := meter.Int64Gauge("poller.enrich.queue",
+		metric.WithDescription("Enrichment queue depth"))
+
 	return &Poller{
-		opts:       *opts,
-		enrichCh:   make(chan enrichRequest, enrichQueueSize),
-		seenICAO:   make(map[string]bool),
-		seenRoutes: make(map[string]bool),
-		lastEvict:  time.Now(),
+		opts:          *opts,
+		enrichCh:      make(chan enrichRequest, enrichQueueSize),
+		pollCount:     pollCount,
+		pollDuration:  pollDuration,
+		aircraftGauge: aircraftGauge,
+		enrichQueue:   enrichQueue,
+		seenICAO:      make(map[string]bool),
+		seenRoutes:    make(map[string]bool),
+		lastEvict:     time.Now(),
 	}
 }
 
@@ -137,6 +162,10 @@ func (p *Poller) Run(ctx context.Context) {
 // poll executes a single poll cycle: query source, filter by distance,
 // store state, log sightings, and submit enrichment requests.
 func (p *Poller) poll(ctx context.Context) {
+	tracer := otel.Tracer("flight-fetcher/poller")
+	ctx, span := tracer.Start(ctx, "poller.poll")
+	defer span.End()
+	start := time.Now()
 	p.mu.Lock()
 	if time.Since(p.lastEvict) >= p.opts.EvictInterval {
 		slog.InfoContext(ctx, "evicting enrichment cache",
@@ -151,6 +180,10 @@ func (p *Poller) poll(ctx context.Context) {
 	bbox := geo.BBoxAround(p.opts.Center, p.opts.RadiusKm)
 	resp, err := p.opts.Source.GetStates(ctx, bbox)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "poll failed")
+		p.pollCount.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "error")))
+		p.pollDuration.Record(ctx, time.Since(start).Seconds())
 		slog.WarnContext(ctx, "poll failed", slog.String("error", err.Error()))
 		return
 	}
@@ -193,6 +226,12 @@ func (p *Poller) poll(ctx context.Context) {
 		}
 		count++
 	}
+
+	span.SetAttributes(attribute.Int("aircraft.count", count))
+	p.pollCount.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "ok")))
+	p.pollDuration.Record(ctx, time.Since(start).Seconds())
+	p.aircraftGauge.Record(ctx, int64(count))
+	p.enrichQueue.Record(ctx, int64(len(p.enrichCh)))
 
 	slog.InfoContext(ctx, "poll complete",
 		slog.Int("aircraft_count", count),

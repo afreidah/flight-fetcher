@@ -21,6 +21,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/config"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
+	"github.com/afreidah/flight-fetcher/internal/observe"
 	"github.com/afreidah/flight-fetcher/internal/flightaware"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/hexdb"
@@ -47,11 +48,22 @@ func main() {
 		slog.ErrorContext(context.Background(), "invalid log level", slog.String("level", *logLevel), slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	})))
-
 	ctx := context.Background()
+
+	otelShutdown, err := observe.Setup(ctx, "flight-fetcher", Version)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to initialize observability", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer func() {
+		if err := otelShutdown(ctx); err != nil {
+			slog.ErrorContext(ctx, "observability shutdown error", slog.String("error", err.Error()))
+		}
+	}()
+
+	slog.SetDefault(slog.New(&observe.TracedHandler{
+		Handler: slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}),
+	}))
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

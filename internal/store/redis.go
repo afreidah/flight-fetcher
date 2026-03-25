@@ -20,6 +20,7 @@ import (
 
 	"github.com/afreidah/flight-fetcher/internal/opensky"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -47,19 +48,26 @@ type RedisStore struct {
 // NewRedisStore creates a RedisStore connected to the given Redis instance.
 // The ttl parameter controls how long flight entries persist before expiring.
 func NewRedisStore(addr, password string, db int, ttl time.Duration) *RedisStore {
-	return &RedisStore{
-		client: redis.NewClient(&redis.Options{
-			Addr:         addr,
-			Password:     password,
-			DB:           db,
-			DialTimeout:  5 * time.Second,
-			ReadTimeout:  3 * time.Second,
-			WriteTimeout: 3 * time.Second,
-			PoolSize:     10,
-			MinIdleConns: 2,
-		}),
-		ttl: ttl,
+	client := redis.NewClient(&redis.Options{
+		Addr:         addr,
+		Password:     password,
+		DB:           db,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+		PoolSize:     10,
+		MinIdleConns: 2,
+	})
+
+	ctx := context.Background()
+	if err := redisotel.InstrumentTracing(client); err != nil {
+		slog.WarnContext(ctx, "failed to instrument redis tracing", slog.String("error", err.Error()))
 	}
+	if err := redisotel.InstrumentMetrics(client); err != nil {
+		slog.WarnContext(ctx, "failed to instrument redis metrics", slog.String("error", err.Error()))
+	}
+
+	return &RedisStore{client: client, ttl: ttl}
 }
 
 // SetFlight stores the current state of a flight, keyed by ICAO24 with a TTL.
