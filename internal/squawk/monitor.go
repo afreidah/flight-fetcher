@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
@@ -55,11 +56,6 @@ type AlertStore interface {
 	HasRecentSquawkAlert(ctx context.Context, icao24, squawk string, cooldown time.Duration) (bool, error)
 }
 
-// AlertEnricher enriches aircraft metadata and route information.
-type AlertEnricher interface {
-	Enrich(ctx context.Context, icao24 string) bool
-	EnrichRoute(ctx context.Context, callsign string) bool
-}
 
 // -------------------------------------------------------------------------
 // TYPES
@@ -73,7 +69,7 @@ const alertCooldown = 30 * time.Minute
 type Monitor struct {
 	source   GlobalFlightSource
 	store    AlertStore
-	enricher AlertEnricher
+	enricher enricher.Interface
 	interval time.Duration
 }
 
@@ -82,11 +78,11 @@ type Monitor struct {
 // -------------------------------------------------------------------------
 
 // New creates a Monitor with the given dependencies and poll interval.
-func New(source GlobalFlightSource, store AlertStore, enricher AlertEnricher, interval time.Duration) *Monitor {
+func New(source GlobalFlightSource, store AlertStore, enr enricher.Interface, interval time.Duration) *Monitor {
 	return &Monitor{
 		source:   source,
 		store:    store,
-		enricher: enricher,
+		enricher: enr,
 		interval: interval,
 	}
 }
