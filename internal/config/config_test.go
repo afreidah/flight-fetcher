@@ -496,9 +496,63 @@ postgres { dsn = "" }
 			wantErr: "airlabs.api_key",
 		},
 		{
+			name:    "empty flightaware key",
+			config:  validBase(`flightaware { api_key = "" }`),
+			wantErr: "flightaware.api_key",
+		},
+		{
 			name:    "invalid squawk monitor interval",
 			config:  validBase(`squawk_monitor { interval = "bad" }`),
 			wantErr: "squawk_monitor.interval",
+		},
+		{
+			name: "poll interval too short",
+			config: `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+opensky {
+  id     = "test"
+  secret = "test"
+}
+poll_interval = "5s"
+redis { addr = "localhost:6379" }
+postgres { dsn = "postgres://localhost/test" }
+`,
+			wantErr: "poll_interval must be at least 10s",
+		},
+		{
+			name:    "invalid enrichment refresh",
+			config:  validBase(`enrichment_refresh = "bad"`),
+			wantErr: "enrichment_refresh",
+		},
+		{
+			name: "invalid retention alerts max age",
+			config: validBase(`retention {
+  sightings_max_age = "720h"
+  alerts_max_age    = "bad"
+}`),
+			wantErr: "retention.alerts_max_age",
+		},
+		{
+			name: "invalid retention routes max age",
+			config: validBase(`retention {
+  sightings_max_age = "720h"
+  alerts_max_age    = "168h"
+  routes_max_age    = "bad"
+}`),
+			wantErr: "retention.routes_max_age",
+		},
+		{
+			name: "invalid retention interval",
+			config: validBase(`retention {
+  sightings_max_age = "720h"
+  alerts_max_age    = "168h"
+  interval          = "bad"
+}`),
+			wantErr: "retention.interval",
 		},
 	}
 
