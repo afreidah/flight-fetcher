@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -43,9 +44,9 @@ func NewClient() *Client {
 // Lookup fetches aircraft metadata by ICAO24 hex code. Returns nil if the
 // aircraft is not found in HexDB.
 func (c *Client) Lookup(ctx context.Context, icao24 string) (*AircraftInfo, error) {
-	url := fmt.Sprintf("%s/aircraft/%s", c.baseURL, icao24)
+	reqURL := fmt.Sprintf("%s/aircraft/%s", c.baseURL, url.PathEscape(icao24))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

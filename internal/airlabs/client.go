@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -58,10 +59,13 @@ func (c *Client) LookupRoute(ctx context.Context, callsign string) (*route.Info,
 		return nil, nil
 	}
 
-	url := fmt.Sprintf("%s/flight?flight_icao=%s&api_key=%s",
-		c.baseURL, callsign, c.apiKey)
+	params := url.Values{
+		"flight_icao": {callsign},
+		"api_key":     {c.apiKey},
+	}
+	reqURL := fmt.Sprintf("%s/flight?%s", c.baseURL, params.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
