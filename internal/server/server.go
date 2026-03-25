@@ -49,6 +49,11 @@ type SquawkAlertReader interface {
 	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error)
 }
 
+// HealthPinger checks if a backend dependency is reachable.
+type HealthPinger interface {
+	Ping(ctx context.Context) error
+}
+
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
@@ -59,6 +64,7 @@ type Options struct {
 	Aircraft   AircraftMetaReader
 	Routes     RouteReader
 	Alerts     SquawkAlertReader
+	Pingers    []HealthPinger
 	Version    string
 	RefreshSec int
 }
@@ -94,6 +100,7 @@ func New(opts *Options) *Server {
 	s.mux.HandleFunc("GET /api/squawk-alerts", s.handleSquawkAlerts)
 	s.mux.HandleFunc("GET /api/aircraft/{icao24}", s.handleGetAircraft)
 	s.mux.HandleFunc("GET /api/routes/{callsign}", s.handleGetRoute)
+	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	return s
 }
 
@@ -246,6 +253,24 @@ func (s *Server) handleGetRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(r.Context(), w, route)
+}
+
+// handleHealthz checks all registered backend dependencies and returns
+// 200 if all are reachable, 503 if any fail.
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	for _, p := range s.opts.Pingers {
+		if err := p.Ping(ctx); err != nil {
+			http.Error(w, "unhealthy", http.StatusServiceUnavailable)
+			slog.WarnContext(r.Context(), "health check failed",
+				slog.String("error", err.Error()))
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
 }
 
 // writeJSON encodes v as JSON and writes it to w.

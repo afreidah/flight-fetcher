@@ -79,6 +79,16 @@ func (s *stubAlertReader) GetRecentSquawkAlerts(_ context.Context, _ time.Durati
 	return s.alerts, s.err
 }
 
+// stubPinger is a minimal HealthPinger for testing.
+type stubPinger struct {
+	err error
+}
+
+// Ping returns the stubbed error.
+func (s *stubPinger) Ping(_ context.Context) error {
+	return s.err
+}
+
 // -------------------------------------------------------------------------
 // TESTS
 // -------------------------------------------------------------------------
@@ -450,6 +460,62 @@ func TestHandleGetAircraft_Sentinel(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d (sentinel should be treated as not found)", w.Code, http.StatusNotFound)
+	}
+}
+
+// TestHandleHealthz_Healthy verifies that healthy pingers return 200.
+func TestHandleHealthz_Healthy(t *testing.T) {
+	srv := New(&Options{
+		Flights:  &stubFlightLister{},
+		Aircraft: &stubMetaReader{},
+		Pingers:  []HealthPinger{&stubPinger{}, &stubPinger{}},
+		Version:  "test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if w.Body.String() != "ok" {
+		t.Errorf("body = %q, want %q", w.Body.String(), "ok")
+	}
+}
+
+// TestHandleHealthz_Unhealthy verifies that a failing pinger returns 503.
+func TestHandleHealthz_Unhealthy(t *testing.T) {
+	srv := New(&Options{
+		Flights:  &stubFlightLister{},
+		Aircraft: &stubMetaReader{},
+		Pingers:  []HealthPinger{&stubPinger{}, &stubPinger{err: errors.New("pg down")}},
+		Version:  "test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+// TestHandleHealthz_NoPingers verifies that no pingers returns 200.
+func TestHandleHealthz_NoPingers(t *testing.T) {
+	srv := New(&Options{
+		Flights:  &stubFlightLister{},
+		Aircraft: &stubMetaReader{},
+		Version:  "test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 }
 

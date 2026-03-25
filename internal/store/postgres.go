@@ -247,6 +247,11 @@ func (p *PostgresStore) DeleteOldRoutes(ctx context.Context, maxAge time.Duratio
 	return result.RowsAffected(), nil
 }
 
+// Ping verifies the PostgreSQL connection is alive.
+func (p *PostgresStore) Ping(ctx context.Context) error {
+	return p.pool.Ping(ctx)
+}
+
 // Close shuts down the PostgreSQL connection pool.
 func (p *PostgresStore) Close() {
 	p.pool.Close()
