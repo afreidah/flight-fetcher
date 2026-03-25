@@ -30,6 +30,8 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/server"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/store"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Version is set at build time via -ldflags.
@@ -57,6 +59,11 @@ func main() {
 	redisTTL := cfg.Poll * 3
 	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, redisTTL)
 	defer redisStore.Close()
+
+	if err := redisStore.Ping(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed to connect to redis", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
 	pgStore, err := store.NewPostgresStore(ctx, cfg.Postgres.DSN, 0)
 	if err != nil {
@@ -106,29 +113,37 @@ func main() {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	g, ctx := errgroup.WithContext(ctx)
+
 	if cfg.Server != nil && cfg.Server.Listen != "" {
 		srv := server.New(&server.Options{
 			Flights:    redisStore,
 			Aircraft:   pgStore,
 			Routes:     pgStore,
 			Alerts:     pgStore,
+			Pingers:    []server.HealthPinger{redisStore, pgStore},
 			Version:    Version,
 			RefreshSec: cfg.Server.RefreshSeconds(),
 		})
-		go srv.ListenAndServe(ctx, cfg.Server.Listen)
+		g.Go(func() error { srv.ListenAndServe(ctx, cfg.Server.Listen); return nil })
 	}
 
 	if cfg.SquawkMonitor != nil {
 		squawkClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 		sm := squawk.New(squawkClient, pgStore, enr, cfg.SquawkMonitor.Poll)
-		go sm.Run(ctx)
+		g.Go(func() error { sm.Run(ctx); return nil })
 	}
 
 	if cfg.Retention != nil {
 		r := cfg.Retention
 		rw := retention.New(pgStore, r.Sightings, r.Alerts, r.Routes, r.CleanInterval)
-		go rw.Run(ctx)
+		g.Go(func() error { rw.Run(ctx); return nil })
 	}
 
-	p.Run(ctx)
+	g.Go(func() error { p.Run(ctx); return nil })
+
+	if err := g.Wait(); err != nil {
+		slog.ErrorContext(ctx, "shutdown error", slog.String("error", err.Error()))
+	}
+	slog.InfoContext(ctx, "shutdown complete")
 }

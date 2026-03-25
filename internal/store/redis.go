@@ -105,6 +105,11 @@ func (r *RedisStore) GetFlight(ctx context.Context, icao24 string) (*opensky.Sta
 	return &sv, nil
 }
 
+// Ping verifies the Redis connection is alive.
+func (r *RedisStore) Ping(ctx context.Context) error {
+	return r.client.Ping(ctx).Err()
+}
+
 // Close shuts down the Redis client connection.
 func (r *RedisStore) Close() error {
 	return r.client.Close()
