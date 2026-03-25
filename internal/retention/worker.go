@@ -72,36 +72,53 @@ func (w *Worker) Run(ctx context.Context) {
 // INTERNALS
 // -------------------------------------------------------------------------
 
-// cleanup executes a single cleanup cycle for all tables.
+// cleanup executes a single cleanup cycle for all tables. Each delete is
+// batched (up to 10000 rows per call) and looped until no rows remain,
+// keeping lock durations short.
 func (w *Worker) cleanup(ctx context.Context) {
 	var errs []error
 
-	sightings, err := w.cleaner.DeleteOldSightings(ctx, w.sightingsAge)
-	if err != nil {
+	if err := w.deleteInBatches(ctx, "sightings", func(ctx context.Context) (int64, error) {
+		return w.cleaner.DeleteOldSightings(ctx, w.sightingsAge)
+	}); err != nil {
 		errs = append(errs, fmt.Errorf("sightings: %w", err))
-	} else if sightings > 0 {
-		slog.InfoContext(ctx, "cleaned old sightings",
-			slog.Int64("deleted", sightings))
 	}
 
-	alerts, err := w.cleaner.DeleteOldSquawkAlerts(ctx, w.alertsAge)
-	if err != nil {
+	if err := w.deleteInBatches(ctx, "squawk alerts", func(ctx context.Context) (int64, error) {
+		return w.cleaner.DeleteOldSquawkAlerts(ctx, w.alertsAge)
+	}); err != nil {
 		errs = append(errs, fmt.Errorf("squawk alerts: %w", err))
-	} else if alerts > 0 {
-		slog.InfoContext(ctx, "cleaned old squawk alerts",
-			slog.Int64("deleted", alerts))
 	}
 
-	routes, err := w.cleaner.DeleteOldRoutes(ctx, w.routesAge)
-	if err != nil {
+	if err := w.deleteInBatches(ctx, "routes", func(ctx context.Context) (int64, error) {
+		return w.cleaner.DeleteOldRoutes(ctx, w.routesAge)
+	}); err != nil {
 		errs = append(errs, fmt.Errorf("routes: %w", err))
-	} else if routes > 0 {
-		slog.InfoContext(ctx, "cleaned stale routes",
-			slog.Int64("deleted", routes))
 	}
 
 	if err := errors.Join(errs...); err != nil {
 		slog.WarnContext(ctx, "retention cleanup errors",
 			slog.String("error", err.Error()))
 	}
+}
+
+// deleteInBatches calls deleteFn repeatedly until it returns 0 rows,
+// logging the total rows deleted.
+func (w *Worker) deleteInBatches(ctx context.Context, name string, deleteFn func(context.Context) (int64, error)) error {
+	var total int64
+	for {
+		n, err := deleteFn(ctx)
+		if err != nil {
+			return err
+		}
+		total += n
+		if n == 0 {
+			break
+		}
+	}
+	if total > 0 {
+		slog.InfoContext(ctx, "cleaned old "+name,
+			slog.Int64("deleted", total))
+	}
+	return nil
 }

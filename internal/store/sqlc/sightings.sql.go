@@ -13,7 +13,9 @@ import (
 )
 
 const deleteOldSightings = `-- name: DeleteOldSightings :execresult
-DELETE FROM sightings WHERE seen_at < $1
+DELETE FROM sightings WHERE id IN (
+    SELECT s.id FROM sightings s WHERE s.seen_at < $1 LIMIT 10000
+)
 `
 
 func (q *Queries) DeleteOldSightings(ctx context.Context, seenAt pgtype.Timestamptz) (pgconn.CommandTag, error) {

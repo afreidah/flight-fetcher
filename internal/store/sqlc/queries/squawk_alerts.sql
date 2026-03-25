@@ -15,4 +15,6 @@ WHERE seen_at > $1
 ORDER BY seen_at DESC;
 
 -- name: DeleteOldSquawkAlerts :execresult
-DELETE FROM squawk_alerts WHERE seen_at < $1;
+DELETE FROM squawk_alerts WHERE id IN (
+    SELECT s.id FROM squawk_alerts s WHERE s.seen_at < $1 LIMIT 10000
+);

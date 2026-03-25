@@ -16,4 +16,6 @@ FROM flight_routes
 WHERE callsign = $1 AND cached_at > $2;
 
 -- name: DeleteOldRoutes :execresult
-DELETE FROM flight_routes WHERE cached_at < $1;
+DELETE FROM flight_routes WHERE callsign IN (
+    SELECT r.callsign FROM flight_routes r WHERE r.cached_at < $1 LIMIT 10000
+);

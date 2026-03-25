@@ -13,7 +13,9 @@ import (
 )
 
 const deleteOldRoutes = `-- name: DeleteOldRoutes :execresult
-DELETE FROM flight_routes WHERE cached_at < $1
+DELETE FROM flight_routes WHERE callsign IN (
+    SELECT r.callsign FROM flight_routes r WHERE r.cached_at < $1 LIMIT 10000
+)
 `
 
 func (q *Queries) DeleteOldRoutes(ctx context.Context, cachedAt pgtype.Timestamptz) (pgconn.CommandTag, error) {
