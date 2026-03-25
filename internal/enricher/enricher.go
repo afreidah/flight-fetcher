@@ -53,11 +53,12 @@ type RouteLookup interface {
 
 // Options holds the dependencies for the enricher.
 type Options struct {
-	Lookup        AircraftLookup
-	Store         AircraftStore
-	RouteLookup   RouteLookup
-	RouteFallback RouteLookup
-	RouteStore    RouteStore
+	Lookup         AircraftLookup
+	LookupFallback AircraftLookup
+	Store          AircraftStore
+	RouteLookup    RouteLookup
+	RouteFallback  RouteLookup
+	RouteStore     RouteStore
 }
 
 // Enricher looks up and caches aircraft metadata and flight route information.
@@ -95,13 +96,26 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 
 	info, err := e.opts.Lookup.Lookup(ctx, icao24)
 	if err != nil {
-		slog.WarnContext(ctx, "hexdb lookup failed",
+		slog.WarnContext(ctx, "primary aircraft lookup failed",
 			slog.String("icao24", icao24),
 			slog.String("error", err.Error()))
-		return false
+		if e.opts.LookupFallback != nil {
+			info, err = e.opts.LookupFallback.Lookup(ctx, icao24)
+			if err != nil {
+				slog.WarnContext(ctx, "fallback aircraft lookup failed",
+					slog.String("icao24", icao24),
+					slog.String("error", err.Error()))
+				return false
+			}
+		} else {
+			return false
+		}
+	}
+	if info == nil && e.opts.LookupFallback != nil {
+		info, _ = e.opts.LookupFallback.Lookup(ctx, icao24)
 	}
 	if info == nil {
-		slog.InfoContext(ctx, "no hexdb data found",
+		slog.InfoContext(ctx, "no aircraft data found",
 			slog.String("icao24", icao24))
 		sentinel := &aircraft.Info{ICAO24: icao24}
 		if err := e.opts.Store.SaveAircraftMeta(ctx, sentinel); err != nil {

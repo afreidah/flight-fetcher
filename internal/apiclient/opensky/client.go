@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 )
@@ -85,16 +86,7 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 	if err != nil {
 		return nil, err
 	}
-
-	if c.clientID != "" {
-		token, err := c.getToken(ctx)
-		if err != nil {
-			slog.WarnContext(ctx, "oauth2 token fetch failed, trying without auth",
-				slog.String("error", err.Error()))
-		} else {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-	}
+	c.addAuth(ctx, req)
 
 	resp, err := c.Do(req)
 	if err != nil {
@@ -128,9 +120,72 @@ func (c *Client) GetStates(ctx context.Context, bbox geo.BBox) (*StatesResponse,
 	return result, nil
 }
 
+// metadataResponse represents the OpenSky aircraft metadata endpoint response.
+type metadataResponse struct {
+	Registration     string `json:"registration"`
+	ManufacturerName string `json:"manufacturerName"`
+	Model            string `json:"model"`
+	OperatorICAO     string `json:"operatorIcao"`
+}
+
+// Lookup fetches aircraft metadata from the OpenSky metadata endpoint.
+// Returns nil if the aircraft is not found or has no useful data. Satisfies
+// the enricher.AircraftLookup interface for use as a fallback source.
+func (c *Client) Lookup(ctx context.Context, icao24 string) (*aircraft.Info, error) {
+	req, err := c.NewRequest(ctx, http.MethodGet, "/metadata/aircraft/icao/"+url.PathEscape(icao24), nil)
+	if err != nil {
+		return nil, err
+	}
+	c.addAuth(ctx, req)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var meta metadataResponse
+	if err := c.DecodeJSON(resp.Body, &meta); err != nil {
+		return nil, err
+	}
+	if meta.Registration == "" && meta.Model == "" {
+		return nil, nil
+	}
+
+	return &aircraft.Info{
+		ICAO24:           icao24,
+		Registration:     meta.Registration,
+		ManufacturerName: meta.ManufacturerName,
+		Type:             meta.Model,
+		OperatorFlagCode: meta.OperatorICAO,
+	}, nil
+}
+
 // -------------------------------------------------------------------------
 // INTERNALS
 // -------------------------------------------------------------------------
+
+// addAuth sets the OAuth2 bearer token on the request if credentials are
+// configured. Logs a warning and proceeds without auth on token failure.
+func (c *Client) addAuth(ctx context.Context, req *http.Request) {
+	if c.clientID == "" {
+		return
+	}
+	token, err := c.getToken(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "oauth2 token fetch failed, trying without auth",
+			slog.String("error", err.Error()))
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+}
 
 // getToken returns a cached OAuth2 access token, refreshing it if expired.
 // Uses a dedicated mutex so only one goroutine refreshes at a time while

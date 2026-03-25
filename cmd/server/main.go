@@ -110,12 +110,14 @@ func main() {
 		}
 	}
 
+	oskyMetaClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 	enr := enricher.New(&enricher.Options{
-		Lookup:        hexdbClient,
-		Store:         pgStore,
-		RouteLookup:   routeLookup,
-		RouteFallback: routeFallback,
-		RouteStore:    routeStore,
+		Lookup:         hexdbClient,
+		LookupFallback: oskyMetaClient,
+		Store:          pgStore,
+		RouteLookup:    routeLookup,
+		RouteFallback:  routeFallback,
+		RouteStore:     routeStore,
 	})
 	p := poller.New(&poller.Options{
 		Source:        oskyClient,
