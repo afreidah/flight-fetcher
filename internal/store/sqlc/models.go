@@ -9,12 +9,15 @@ import (
 )
 
 type AircraftMetum struct {
-	Icao24       string
-	Registration string
-	Manufacturer string
-	Type         string
-	Operator     string
-	UpdatedAt    pgtype.Timestamptz
+	Icao24           string
+	Registration     string
+	Manufacturer     string
+	Type             string
+	Operator         string
+	UpdatedAt        pgtype.Timestamptz
+	IcaoTypeCode     string
+	RegisteredOwners string
+	ImageUrl         string
 }
 
 type FlightRoute struct {

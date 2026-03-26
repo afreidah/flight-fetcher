@@ -46,7 +46,7 @@ func TestLookup_Success(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"registration":"N12345","manufacturerName":"Boeing","model":"737-800","operatorIcao":"UAL"}`))
+		_, _ = w.Write([]byte(`{"registration":"N12345","manufacturerName":"Boeing","model":"737-800","operatorIcao":"UAL","typecode":"B738","owner":"United Airlines"}`))
 	}))
 	defer srv.Close()
 
@@ -63,6 +63,12 @@ func TestLookup_Success(t *testing.T) {
 	}
 	if info.Type != "737-800" {
 		t.Errorf("Type = %q, want %q", info.Type, "737-800")
+	}
+	if info.ICAOTypeCode != "B738" {
+		t.Errorf("ICAOTypeCode = %q, want %q", info.ICAOTypeCode, "B738")
+	}
+	if info.RegisteredOwners != "United Airlines" {
+		t.Errorf("RegisteredOwners = %q, want %q", info.RegisteredOwners, "United Airlines")
 	}
 }
 

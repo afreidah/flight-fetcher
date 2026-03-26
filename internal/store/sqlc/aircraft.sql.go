@@ -10,17 +10,20 @@ import (
 )
 
 const getAircraftMeta = `-- name: GetAircraftMeta :one
-SELECT icao24, registration, manufacturer, type, operator
+SELECT icao24, registration, manufacturer, type, operator, icao_type_code, registered_owners, image_url
 FROM aircraft_meta
 WHERE icao24 = $1
 `
 
 type GetAircraftMetaRow struct {
-	Icao24       string
-	Registration string
-	Manufacturer string
-	Type         string
-	Operator     string
+	Icao24           string
+	Registration     string
+	Manufacturer     string
+	Type             string
+	Operator         string
+	IcaoTypeCode     string
+	RegisteredOwners string
+	ImageUrl         string
 }
 
 func (q *Queries) GetAircraftMeta(ctx context.Context, icao24 string) (GetAircraftMetaRow, error) {
@@ -32,27 +35,36 @@ func (q *Queries) GetAircraftMeta(ctx context.Context, icao24 string) (GetAircra
 		&i.Manufacturer,
 		&i.Type,
 		&i.Operator,
+		&i.IcaoTypeCode,
+		&i.RegisteredOwners,
+		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const upsertAircraftMeta = `-- name: UpsertAircraftMeta :exec
-INSERT INTO aircraft_meta (icao24, registration, manufacturer, type, operator, updated_at)
-VALUES ($1, $2, $3, $4, $5, now())
+INSERT INTO aircraft_meta (icao24, registration, manufacturer, type, operator, icao_type_code, registered_owners, image_url, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 ON CONFLICT (icao24) DO UPDATE SET
     registration = EXCLUDED.registration,
     manufacturer = EXCLUDED.manufacturer,
     type = EXCLUDED.type,
     operator = EXCLUDED.operator,
+    icao_type_code = EXCLUDED.icao_type_code,
+    registered_owners = EXCLUDED.registered_owners,
+    image_url = EXCLUDED.image_url,
     updated_at = now()
 `
 
 type UpsertAircraftMetaParams struct {
-	Icao24       string
-	Registration string
-	Manufacturer string
-	Type         string
-	Operator     string
+	Icao24           string
+	Registration     string
+	Manufacturer     string
+	Type             string
+	Operator         string
+	IcaoTypeCode     string
+	RegisteredOwners string
+	ImageUrl         string
 }
 
 func (q *Queries) UpsertAircraftMeta(ctx context.Context, arg UpsertAircraftMetaParams) error {
@@ -62,6 +74,9 @@ func (q *Queries) UpsertAircraftMeta(ctx context.Context, arg UpsertAircraftMeta
 		arg.Manufacturer,
 		arg.Type,
 		arg.Operator,
+		arg.IcaoTypeCode,
+		arg.RegisteredOwners,
+		arg.ImageUrl,
 	)
 	return err
 }

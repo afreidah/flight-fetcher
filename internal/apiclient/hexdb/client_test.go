@@ -28,22 +28,32 @@ func TestNewClient(t *testing.T) {
 
 // testClient creates a Client pointed at the given test server.
 func testClient(srv *httptest.Server) *Client {
-	return &Client{Client: apiclient.New(apiclient.Options{BaseURL: srv.URL})}
+	return &Client{
+		Client:       apiclient.New(apiclient.Options{BaseURL: srv.URL}),
+		imageBaseURL: srv.URL,
+	}
 }
 
-// TestLookup_Success verifies that a valid HexDB response is decoded correctly.
+// TestLookup_Success verifies that a valid HexDB response is decoded correctly
+// and the image URL is resolved from the image endpoint.
 func TestLookup_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/aircraft/abc123" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/aircraft/abc123":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"Registration": "N12345",
+				"ManufacturerName": "Boeing",
+				"Type": "737-800",
+				"OperatorFlagCode": "UAL",
+				"ICAOTypeCode": "B738",
+				"RegisteredOwners": "United Airlines"
+			}`))
+		case "/hex-image":
+			_, _ = w.Write([]byte("https://hexdb.io/static/aircraft-images/N12345.jpg"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"Registration": "N12345",
-			"ManufacturerName": "Boeing",
-			"Type": "737-800",
-			"OperatorFlagCode": "UAL"
-		}`))
 	}))
 	defer srv.Close()
 
@@ -69,6 +79,15 @@ func TestLookup_Success(t *testing.T) {
 	}
 	if info.OperatorFlagCode != "UAL" {
 		t.Errorf("OperatorFlagCode = %q, want %q", info.OperatorFlagCode, "UAL")
+	}
+	if info.ICAOTypeCode != "B738" {
+		t.Errorf("ICAOTypeCode = %q, want %q", info.ICAOTypeCode, "B738")
+	}
+	if info.RegisteredOwners != "United Airlines" {
+		t.Errorf("RegisteredOwners = %q, want %q", info.RegisteredOwners, "United Airlines")
+	}
+	if info.ImageURL != "https://hexdb.io/static/aircraft-images/N12345.jpg" {
+		t.Errorf("ImageURL = %q, want resolved image URL", info.ImageURL)
 	}
 }
 

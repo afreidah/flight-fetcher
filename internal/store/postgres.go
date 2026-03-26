@@ -130,11 +130,14 @@ func deleteOlderThan(p *PostgresStore, ctx context.Context, name string, maxAge 
 func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *aircraft.Info) error {
 	ctx, endSpan := p.startSpan(ctx, "SaveAircraftMeta")
 	err := p.queries.UpsertAircraftMeta(ctx, db.UpsertAircraftMetaParams{
-		Icao24:       info.ICAO24,
-		Registration: info.Registration,
-		Manufacturer: info.ManufacturerName,
-		Type:         info.Type,
-		Operator:     info.OperatorFlagCode,
+		Icao24:           info.ICAO24,
+		Registration:     info.Registration,
+		Manufacturer:     info.ManufacturerName,
+		Type:             info.Type,
+		Operator:         info.OperatorFlagCode,
+		IcaoTypeCode:     info.ICAOTypeCode,
+		RegisteredOwners: info.RegisteredOwners,
+		ImageUrl:         info.ImageURL,
 	})
 	endSpan(err)
 	return err
@@ -157,6 +160,9 @@ func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*ai
 			ManufacturerName: row.Manufacturer,
 			Type:             row.Type,
 			OperatorFlagCode: row.Operator,
+			ICAOTypeCode:     row.IcaoTypeCode,
+			RegisteredOwners: row.RegisteredOwners,
+			ImageURL:         row.ImageUrl,
 		}, nil
 	})
 }

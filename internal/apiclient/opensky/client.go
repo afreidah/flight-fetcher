@@ -126,6 +126,8 @@ type metadataResponse struct {
 	ManufacturerName string `json:"manufacturerName"`
 	Model            string `json:"model"`
 	OperatorICAO     string `json:"operatorIcao"`
+	TypeCode         string `json:"typecode"`
+	Owner            string `json:"owner"`
 }
 
 // Lookup fetches aircraft metadata from the OpenSky metadata endpoint.
@@ -146,6 +148,8 @@ func (c *Client) Lookup(ctx context.Context, icao24 string) (*aircraft.Info, err
 		ManufacturerName: meta.ManufacturerName,
 		Type:             meta.Model,
 		OperatorFlagCode: meta.OperatorICAO,
+		ICAOTypeCode:     meta.TypeCode,
+		RegisteredOwners: meta.Owner,
 	}, nil
 }
 
