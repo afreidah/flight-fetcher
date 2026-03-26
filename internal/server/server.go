@@ -93,10 +93,12 @@ type Server struct {
 
 // flightDetail combines live state, enriched metadata, and route information.
 type flightDetail struct {
-	State          *opensky.StateVector `json:"state"`
-	Aircraft       *aircraft.Info       `json:"aircraft,omitempty"`
-	Route          *route.Info          `json:"route,omitempty"`
-	Classification string               `json:"classification,omitempty"`
+	State          *opensky.StateVector  `json:"state"`
+	Aircraft       *aircraft.Info        `json:"aircraft,omitempty"`
+	Route          *route.Info           `json:"route,omitempty"`
+	Classification string                `json:"classification,omitempty"`
+	TypeSpec       *aircraft.TypeSpec    `json:"type_spec,omitempty"`
+	Airline        *aircraft.AirlineInfo `json:"airline,omitempty"`
 }
 
 // -------------------------------------------------------------------------
@@ -164,6 +166,13 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// flightListEntry wraps a state vector with classification for the list view.
+type flightListEntry struct {
+	opensky.StateVector
+	Classification string `json:"classification,omitempty"`
+	OperatorCode   string `json:"operator_code,omitempty"`
+}
+
 // handleListFlights returns all current flights as JSON. Returns an empty
 // array instead of 500 when Redis is unavailable so the dashboard degrades
 // gracefully rather than failing entirely.
@@ -172,9 +181,24 @@ func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.WarnContext(r.Context(), "api: list flights failed, returning empty",
 			slog.String("error", err.Error()))
-		flights = []opensky.StateVector{}
+		writeJSON(r.Context(), w, []flightListEntry{})
+		return
 	}
-	writeJSON(r.Context(), w, flights)
+	entries := make([]flightListEntry, len(flights))
+	for i, f := range flights {
+		owners := ""
+		operator := ""
+		if meta, err := s.opts.Aircraft.GetAircraftMeta(r.Context(), f.ICAO24); err == nil && meta != nil && !meta.IsSentinel() {
+			owners = meta.RegisteredOwners
+			operator = meta.OperatorFlagCode
+		}
+		entries[i] = flightListEntry{
+			StateVector:    f,
+			Classification: aircraft.Classify(f.ICAO24, owners),
+			OperatorCode:   operator,
+		}
+	}
+	writeJSON(r.Context(), w, entries)
 }
 
 // handleGetFlight returns live state and enriched metadata for a single aircraft.
@@ -213,6 +237,10 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 		owners = meta.RegisteredOwners
 	}
 	detail.Classification = aircraft.Classify(icao24, owners)
+	if meta != nil {
+		detail.TypeSpec = aircraft.LookupType(meta.ICAOTypeCode)
+		detail.Airline = aircraft.LookupAirline(meta.OperatorFlagCode)
+	}
 
 	if s.opts.Routes != nil && sv.Callsign != "" {
 		route, err := s.opts.Routes.GetFlightRoute(r.Context(), strings.TrimSpace(sv.Callsign))

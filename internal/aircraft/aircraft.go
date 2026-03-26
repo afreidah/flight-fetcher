@@ -5,10 +5,10 @@
 //
 // Shared domain type for aircraft metadata used across API clients, the
 // enricher, store, and server. Includes classification of aircraft as
-// military, law enforcement, or emergency services. Military identification
-// uses ICAO24 hex address ranges sourced from the tar1090-db project
-// (https://github.com/wiedehopf/tar1090-db). Law enforcement and emergency
-// services use keyword matching on registered owner names.
+// military, law enforcement, or emergency services, plus static lookups
+// for aircraft type specifications and airline details. Data sources:
+// military hex ranges and aircraft types from tar1090-db, airline data
+// from OpenFlights/airline-codes.
 // -------------------------------------------------------------------------------
 
 package aircraft
@@ -86,6 +86,93 @@ func IsMilitary(icao24 string) bool {
 }
 
 // -------------------------------------------------------------------------
+// TYPE SPECIFICATIONS
+// -------------------------------------------------------------------------
+
+//go:embed aircraft_types.json
+var aircraftTypesJSON []byte
+
+// TypeSpec contains ICAO aircraft type classification.
+type TypeSpec struct {
+	Description string // ICAO description code (e.g., "L2J" = Land, 2 engines, Jet)
+	WTC         string // Wake turbulence category: L(ight), M(edium), H(eavy), J (super)
+}
+
+var aircraftTypes map[string]TypeSpec
+
+// LookupType returns the type specification for an ICAO type designator
+// (e.g., "B738", "A320"). Returns nil if not found.
+func LookupType(icaoTypeCode string) *TypeSpec {
+	ts, ok := aircraftTypes[strings.ToUpper(icaoTypeCode)]
+	if !ok {
+		return nil
+	}
+	return &ts
+}
+
+// DescribeAircraftClass returns a human-readable description of an ICAO
+// aircraft description code (e.g., "L2J" → "Land, 2 engines, Jet").
+func DescribeAircraftClass(desc string) string {
+	if len(desc) < 3 {
+		return desc
+	}
+	var parts []string
+	switch desc[0] {
+	case 'L':
+		parts = append(parts, "Land")
+	case 'S':
+		parts = append(parts, "Sea")
+	case 'A':
+		parts = append(parts, "Amphibian")
+	case 'H':
+		return "Helicopter"
+	case 'G':
+		return "Gyrocopter"
+	case 'T':
+		return "Tiltrotor"
+	}
+	parts = append(parts, string(desc[1])+" engine(s)")
+	switch desc[2] {
+	case 'J':
+		parts = append(parts, "Jet")
+	case 'T':
+		parts = append(parts, "Turboprop")
+	case 'P':
+		parts = append(parts, "Piston")
+	case 'E':
+		parts = append(parts, "Electric")
+	}
+	return strings.Join(parts, ", ")
+}
+
+// -------------------------------------------------------------------------
+// AIRLINE DETAILS
+// -------------------------------------------------------------------------
+
+//go:embed airlines.json
+var airlinesJSON []byte
+
+// AirlineInfo contains details about an airline operator.
+type AirlineInfo struct {
+	Name     string `json:"name"`
+	Country  string `json:"country"`
+	IATA     string `json:"iata"`
+	Callsign string `json:"callsign"`
+}
+
+var airlines map[string]AirlineInfo
+
+// LookupAirline returns airline details for an ICAO operator code
+// (e.g., "UAL", "DAL"). Returns nil if not found.
+func LookupAirline(operatorCode string) *AirlineInfo {
+	a, ok := airlines[strings.ToUpper(operatorCode)]
+	if !ok {
+		return nil
+	}
+	return &a
+}
+
+// -------------------------------------------------------------------------
 // MILITARY HEX RANGES
 // -------------------------------------------------------------------------
 
@@ -124,6 +211,24 @@ func init() {
 	sort.Slice(militaryRanges, func(i, j int) bool {
 		return militaryRanges[i].low < militaryRanges[j].low
 	})
+
+	// Aircraft types
+	var rawTypes map[string]struct {
+		Desc string `json:"desc"`
+		WTC  string `json:"wtc"`
+	}
+	if err := json.Unmarshal(aircraftTypesJSON, &rawTypes); err != nil {
+		log.Fatalf("parsing aircraft types: %v", err)
+	}
+	aircraftTypes = make(map[string]TypeSpec, len(rawTypes))
+	for k, v := range rawTypes {
+		aircraftTypes[k] = TypeSpec{Description: v.Desc, WTC: v.WTC}
+	}
+
+	// Airlines
+	if err := json.Unmarshal(airlinesJSON, &airlines); err != nil {
+		log.Fatalf("parsing airlines: %v", err)
+	}
 }
 
 // isMilitaryHex checks the ICAO24 against military hex ranges.

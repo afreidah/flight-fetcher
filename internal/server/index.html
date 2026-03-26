@@ -38,7 +38,7 @@
     }
     .col-headers span:hover { color: #6b4c5a; }
     .col-headers .sort-active { color: #e8879a; font-weight: 600; }
-    .col-headers .col-icao { width: 75px; flex-shrink: 0; }
+    .col-headers .col-icao { width: 110px; flex-shrink: 0; }
     .col-headers .col-callsign { width: 80px; flex-shrink: 0; }
     .col-headers .col-country { width: 100px; flex-shrink: 0; }
     .col-headers .col-alt { width: 90px; flex-shrink: 0; }
@@ -56,7 +56,7 @@
     }
     .row-header:hover { background: #fdf0f2; }
     .row.selected .row-header { background: #fdf0f2; border-left: 3px solid #7ea8d4; }
-    .row-header .icao { font-weight: 600; color: #7ea8d4; width: 75px; flex-shrink: 0; }
+    .row-header .icao { font-weight: 600; color: #7ea8d4; width: 110px; flex-shrink: 0; white-space: nowrap; }
     .row-header .callsign { color: #4a4055; width: 80px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row-header .col-country { color: #a08e9a; width: 100px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row-header .col-alt { color: #a08e9a; width: 90px; flex-shrink: 0; }
@@ -199,8 +199,14 @@
       return ' <span class="class-badge class-' + cls + '">' + labels[cls] + '</span>';
     }
 
+    function airlineLogo(code) {
+      if (!code) return "";
+      return ' <img src="https://raw.githubusercontent.com/sexym0nk3y/airline-logos/main/logos/' + esc(code) + '.png" alt="" style="height:20px;vertical-align:middle;margin-left:3px" onerror="this.style.display=\'none\'">';
+    }
+
     function buildHeader(f) {
-      var badge = classBadge(clientClassify(f.icao24));
+      var cls = f.classification || clientClassify(f.icao24);
+      var badge = cls ? classBadge(cls) : airlineLogo(f.operator_code);
       return '<span class="icao">' + esc(f.icao24) + badge + '</span>' +
         '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
         '<span class="col-country">' + esc(f.origin_country || "-") + '</span>' +
@@ -233,9 +239,11 @@
         var isSel = f.icao24 === selected;
         if (markers[f.icao24]) {
           markers[f.icao24].setLatLng(pos);
-          markers[f.icao24].setIcon(planeIcon(f.heading, isSel, clientClassify(f.icao24)));
+          var cls = f.classification || clientClassify(f.icao24);
+          markers[f.icao24].setIcon(planeIcon(f.heading, isSel, cls));
         } else {
-          markers[f.icao24] = L.marker(pos, { icon: planeIcon(f.heading, isSel, clientClassify(f.icao24)) }).addTo(map);
+          var cls = f.classification || clientClassify(f.icao24);
+          markers[f.icao24] = L.marker(pos, { icon: planeIcon(f.heading, isSel, cls) }).addTo(map);
           markers[f.icao24].on("click", function() { selectFlight(f.icao24); });
         }
         markers[f.icao24].bindTooltip(esc(f.callsign.trim() || f.icao24), { direction: "top", offset: [0, -10] });
@@ -391,6 +399,16 @@
         t += row("ICAO Type Code", a.icao_type_code || "-");
         t += row("Owner", a.registered_owners || "-");
         t += row("Operator", a.operator_flag_code || "-");
+        if (data.type_spec) {
+          t += row("Aircraft Class", describeClass(data.type_spec.Description));
+          t += row("Wake Category", wakeLabel(data.type_spec.WTC));
+        }
+        if (data.airline) {
+          t += section("Airline");
+          t += row("Name", data.airline.name || "-");
+          t += row("Country", data.airline.country || "-");
+          if (data.airline.callsign) t += row("Radio Callsign", data.airline.callsign);
+        }
       }
       t += '</table>';
       if (imgURL) {
@@ -522,6 +540,16 @@
     }
     function section(name) {
       return '<tr><td class="section" colspan="2">' + esc(name) + '</td></tr>';
+    }
+    function describeClass(desc) {
+      if (!desc || desc.length < 3) return desc || "-";
+      var landing = {"L":"Land","S":"Sea","A":"Amphibian","H":"Helicopter","G":"Gyrocopter","T":"Tiltrotor"};
+      if (desc[0] === "H" || desc[0] === "G" || desc[0] === "T") return landing[desc[0]];
+      var engine = {"J":"Jet","T":"Turboprop","P":"Piston","E":"Electric"};
+      return (landing[desc[0]] || desc[0]) + ", " + desc[1] + " engine(s), " + (engine[desc[2]] || desc[2]);
+    }
+    function wakeLabel(wtc) {
+      return {"L":"Light","M":"Medium","H":"Heavy","J":"Super"}[wtc] || wtc || "-";
     }
     function fmt(v, unit) {
       return v != null && v !== 0 ? Math.round(v) + " " + unit : "-";
