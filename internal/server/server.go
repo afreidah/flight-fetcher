@@ -52,6 +52,11 @@ type SquawkAlertReader interface {
 	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error)
 }
 
+// ImageFetcher resolves an aircraft photo URL by ICAO24.
+type ImageFetcher interface {
+	FetchImageURL(ctx context.Context, icao24 string) string
+}
+
 // Pinger checks if a backend dependency is reachable.
 type Pinger interface {
 	Ping(ctx context.Context) error
@@ -73,6 +78,7 @@ type Options struct {
 	Aircraft   AircraftMetaReader
 	Routes     RouteReader
 	Alerts     SquawkAlertReader
+	Images     ImageFetcher
 	Pingers    []HealthPinger
 	Version    string
 	RefreshSec int
@@ -87,9 +93,10 @@ type Server struct {
 
 // flightDetail combines live state, enriched metadata, and route information.
 type flightDetail struct {
-	State    *opensky.StateVector `json:"state"`
-	Aircraft *aircraft.Info  `json:"aircraft,omitempty"`
-	Route    *route.Info `json:"route,omitempty"`
+	State          *opensky.StateVector `json:"state"`
+	Aircraft       *aircraft.Info       `json:"aircraft,omitempty"`
+	Route          *route.Info          `json:"route,omitempty"`
+	Classification string               `json:"classification,omitempty"`
 }
 
 // -------------------------------------------------------------------------
@@ -197,7 +204,15 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 	if meta != nil && meta.IsSentinel() {
 		meta = nil
 	}
+	if meta != nil && meta.ImageURL == "" && s.opts.Images != nil {
+		meta.ImageURL = s.opts.Images.FetchImageURL(r.Context(), icao24)
+	}
 	detail.Aircraft = meta
+	owners := ""
+	if meta != nil {
+		owners = meta.RegisteredOwners
+	}
+	detail.Classification = aircraft.Classify(icao24, owners)
 
 	if s.opts.Routes != nil && sv.Callsign != "" {
 		route, err := s.opts.Routes.GetFlightRoute(r.Context(), strings.TrimSpace(sv.Callsign))
@@ -242,6 +257,9 @@ func (s *Server) handleGetAircraft(w http.ResponseWriter, r *http.Request) {
 	if meta == nil || meta.IsSentinel() {
 		http.Error(w, "aircraft not found", http.StatusNotFound)
 		return
+	}
+	if meta.ImageURL == "" && s.opts.Images != nil {
+		meta.ImageURL = s.opts.Images.FetchImageURL(r.Context(), icao24)
 	}
 	writeJSON(r.Context(), w, meta)
 }

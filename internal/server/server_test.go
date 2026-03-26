@@ -79,6 +79,16 @@ func (s *stubAlertReader) GetRecentSquawkAlerts(_ context.Context, _ time.Durati
 	return s.alerts, s.err
 }
 
+// stubImageFetcher is a minimal ImageFetcher for testing.
+type stubImageFetcher struct {
+	url string
+}
+
+// FetchImageURL returns the stubbed URL.
+func (s *stubImageFetcher) FetchImageURL(_ context.Context, _ string) string {
+	return s.url
+}
+
 // stubPinger is a minimal HealthPinger for testing.
 type stubPinger struct {
 	err error
@@ -480,6 +490,53 @@ func TestHandleGetAircraft_Error(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+// TestHandleGetFlight_ImageBackfill verifies that a missing image URL is fetched on demand.
+func TestHandleGetFlight_ImageBackfill(t *testing.T) {
+	sv := &opensky.StateVector{ICAO24: "abc123", Callsign: "UAL123"}
+	meta := &aircraft.Info{ICAO24: "abc123", Registration: "N12345", Type: "737-800"}
+	srv := New(&Options{
+		Flights:  &stubFlightLister{flight: sv},
+		Aircraft: &stubMetaReader{info: meta},
+		Images:   &stubImageFetcher{url: "https://hexdb.io/static/aircraft-images/N12345.jpg"},
+		Version:  "test", RefreshSec: 5,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	var detail flightDetail
+	if err := json.NewDecoder(w.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if detail.Aircraft.ImageURL != "https://hexdb.io/static/aircraft-images/N12345.jpg" {
+		t.Errorf("ImageURL = %q, want backfilled URL", detail.Aircraft.ImageURL)
+	}
+}
+
+// TestHandleGetAircraft_ImageBackfill verifies that a missing image URL is fetched on the aircraft endpoint.
+func TestHandleGetAircraft_ImageBackfill(t *testing.T) {
+	meta := &aircraft.Info{ICAO24: "abc123", Registration: "N12345", Type: "737-800"}
+	srv := New(&Options{
+		Flights:  &stubFlightLister{},
+		Aircraft: &stubMetaReader{info: meta},
+		Images:   &stubImageFetcher{url: "https://hexdb.io/static/aircraft-images/N12345.jpg"},
+		Version:  "test", RefreshSec: 5,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/aircraft/abc123", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	var info aircraft.Info
+	if err := json.NewDecoder(w.Body).Decode(&info); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if info.ImageURL != "https://hexdb.io/static/aircraft-images/N12345.jpg" {
+		t.Errorf("ImageURL = %q, want backfilled URL", info.ImageURL)
 	}
 }
 
