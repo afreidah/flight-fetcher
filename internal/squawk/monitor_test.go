@@ -15,8 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
+	"github.com/afreidah/flight-fetcher/internal/geo"
+	"github.com/afreidah/flight-fetcher/internal/notify"
 )
 
 // -------------------------------------------------------------------------
@@ -96,7 +97,7 @@ func TestScan_DetectsEmergencySquawks(t *testing.T) {
 	store := &stubAlertStore{}
 	enr := &stubEnricher{}
 
-	m := New(source, store, enr, time.Minute)
+	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
 
 	if len(store.alerts) != 2 {
@@ -129,7 +130,7 @@ func TestScan_NoEmergencies(t *testing.T) {
 	store := &stubAlertStore{}
 	enr := &stubEnricher{}
 
-	m := New(source, store, enr, time.Minute)
+	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
 
 	if len(store.alerts) != 0 {
@@ -143,7 +144,7 @@ func TestScan_EmptyResponse(t *testing.T) {
 	store := &stubAlertStore{}
 	enr := &stubEnricher{}
 
-	m := New(source, store, enr, time.Minute)
+	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
 
 	if len(store.alerts) != 0 {
@@ -157,7 +158,7 @@ func TestScan_SourceError(t *testing.T) {
 	store := &stubAlertStore{}
 	enr := &stubEnricher{}
 
-	m := New(source, store, enr, time.Minute)
+	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
 
 	if len(store.alerts) != 0 {
@@ -177,7 +178,7 @@ func TestScan_StoreError(t *testing.T) {
 	store := &stubAlertStore{err: errors.New("pg down")}
 	enr := &stubEnricher{}
 
-	m := New(source, store, enr, time.Minute)
+	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
 
 	// Both should be attempted even though store errors
@@ -200,7 +201,7 @@ func TestScan_EmptyCallsign(t *testing.T) {
 	store := &stubAlertStore{}
 	enr := &stubEnricher{}
 
-	m := New(source, store, enr, time.Minute)
+	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
 
 	if len(enr.enriched) != 1 {
@@ -222,7 +223,7 @@ func TestScan_DeduplicatesWithinCooldown(t *testing.T) {
 	store := &stubAlertStore{}
 	enr := &stubEnricher{}
 
-	m := New(source, store, enr, time.Minute)
+	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
 	m.scan(context.Background())
 	m.scan(context.Background())
@@ -232,5 +233,86 @@ func TestScan_DeduplicatesWithinCooldown(t *testing.T) {
 	}
 	if len(enr.enriched) != 1 {
 		t.Errorf("len(enriched) = %d, want 1", len(enr.enriched))
+	}
+}
+
+// stubNotifier records sent messages and optionally returns an error.
+type stubNotifier struct {
+	messages []notify.Message
+	err      error
+}
+
+func (s *stubNotifier) Send(_ context.Context, msg notify.Message) error {
+	s.messages = append(s.messages, msg)
+	return s.err
+}
+
+// TestScan_SendsNotifications verifies that alerts trigger notifications with correct content.
+func TestScan_SendsNotifications(t *testing.T) {
+	source := &stubSource{resp: &opensky.StatesResponse{
+		Time: 1234,
+		States: []opensky.StateVector{
+			{ICAO24: "a1", Callsign: "UAL123", Squawk: "7700", Latitude: 34.0, Longitude: -118.0},
+			{ICAO24: "a2", Callsign: "DAL456", Squawk: "7600", Latitude: 35.0, Longitude: -119.0},
+		},
+	}}
+	store := &stubAlertStore{}
+	enr := &stubEnricher{}
+	notif := &stubNotifier{}
+
+	m := New(source, store, enr, notif, time.Minute)
+	m.scan(context.Background())
+
+	if len(notif.messages) != 2 {
+		t.Fatalf("len(notifications) = %d, want 2", len(notif.messages))
+	}
+	if notif.messages[0].Title != "Emergency Squawk: General Emergency" {
+		t.Errorf("title = %q, want %q", notif.messages[0].Title, "Emergency Squawk: General Emergency")
+	}
+	if notif.messages[1].Title != "Emergency Squawk: Radio Failure" {
+		t.Errorf("title = %q, want %q", notif.messages[1].Title, "Emergency Squawk: Radio Failure")
+	}
+}
+
+// TestScan_NotificationError verifies that a notification failure does not stop processing.
+func TestScan_NotificationError(t *testing.T) {
+	source := &stubSource{resp: &opensky.StatesResponse{
+		Time: 1234,
+		States: []opensky.StateVector{
+			{ICAO24: "a1", Callsign: "UAL123", Squawk: "7500", Latitude: 34.0, Longitude: -118.0},
+		},
+	}}
+	store := &stubAlertStore{}
+	enr := &stubEnricher{}
+	notif := &stubNotifier{err: errors.New("webhook down")}
+
+	m := New(source, store, enr, notif, time.Minute)
+	m.scan(context.Background())
+
+	// Alert should still be stored and enriched despite notification failure
+	if len(store.alerts) != 1 {
+		t.Errorf("len(alerts) = %d, want 1", len(store.alerts))
+	}
+	if len(enr.enriched) != 1 {
+		t.Errorf("len(enriched) = %d, want 1", len(enr.enriched))
+	}
+}
+
+// TestSquawkLabel verifies human-readable labels for all squawk codes.
+func TestSquawkLabel(t *testing.T) {
+	tests := []struct {
+		code string
+		want string
+	}{
+		{SquawkHijack, "Hijack"},
+		{SquawkRadioFailure, "Radio Failure"},
+		{SquawkEmergency, "General Emergency"},
+		{"1200", "Unknown"},
+	}
+	for _, tt := range tests {
+		got := squawkLabel(tt.code)
+		if got != tt.want {
+			t.Errorf("squawkLabel(%q) = %q, want %q", tt.code, got, tt.want)
+		}
 	}
 }

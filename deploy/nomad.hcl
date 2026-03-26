@@ -120,6 +120,10 @@ retention {
   alerts_max_age    = "168h"
   routes_max_age    = "24h"
 }
+
+discord {
+  webhook_url = "{{ .Data.data.discord_webhook_url }}"
+}
 {{ end }}
 EOH
         destination = "secrets/config.hcl"

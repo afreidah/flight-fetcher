@@ -36,6 +36,7 @@ type rawConfig struct {
 	Server        *ServerConfig         `hcl:"server,block"`
 	SquawkMonitor *rawSquawkMonitorConfig `hcl:"squawk_monitor,block"`
 	Retention     *rawRetentionConfig   `hcl:"retention,block"`
+	Discord       *DiscordConfig        `hcl:"discord,block"`
 }
 
 type rawSquawkMonitorConfig struct {
@@ -68,6 +69,7 @@ type Config struct {
 
 	SquawkMonitor *SquawkMonitorConfig
 	Retention     *RetentionConfig
+	Discord       *DiscordConfig
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -118,6 +120,11 @@ type AirLabsConfig struct {
 // FlightAwareConfig holds credentials for the FlightAware AeroAPI.
 type FlightAwareConfig struct {
 	APIKey string `hcl:"api_key"`
+}
+
+// DiscordConfig holds settings for Discord webhook notifications.
+type DiscordConfig struct {
+	WebhookURL string `hcl:"webhook_url"`
 }
 
 // SquawkMonitorConfig holds validated settings for the global emergency squawk monitor.
@@ -194,6 +201,9 @@ func (r *rawConfig) parse() (*Config, error) {
 	if r.FlightAware != nil && r.FlightAware.APIKey == "" {
 		return nil, errors.New("flightaware.api_key is required when flightaware block is present")
 	}
+	if r.Discord != nil && r.Discord.WebhookURL == "" {
+		return nil, errors.New("discord.webhook_url is required when discord block is present")
+	}
 
 	cfg := &Config{
 		Poll:           poll,
@@ -205,6 +215,7 @@ func (r *rawConfig) parse() (*Config, error) {
 		AirLabs:        r.AirLabs,
 		FlightAware:    r.FlightAware,
 		Server:         r.Server,
+		Discord:        r.Discord,
 	}
 
 	if r.SquawkMonitor != nil {

@@ -22,6 +22,8 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/apiclient/airlabs"
 	"github.com/afreidah/flight-fetcher/internal/config"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
+	"github.com/afreidah/flight-fetcher/internal/notify"
+	"github.com/afreidah/flight-fetcher/internal/notify/discord"
 	"github.com/afreidah/flight-fetcher/internal/observe"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/flightaware"
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -151,8 +153,13 @@ func main() {
 	}
 
 	if cfg.SquawkMonitor != nil {
+		notifyMgr := notify.NewManager()
+		if cfg.Discord != nil {
+			notifyMgr.Register(discord.New(cfg.Discord.WebhookURL))
+			slog.InfoContext(ctx, "discord notifications enabled")
+		}
 		squawkClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
-		sm := squawk.New(squawkClient, pgStore, enr, cfg.SquawkMonitor.Poll)
+		sm := squawk.New(squawkClient, pgStore, enr, notifyMgr, cfg.SquawkMonitor.Poll)
 		g.Go(func() error { sm.Run(ctx); return nil })
 	}
 
