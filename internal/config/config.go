@@ -4,8 +4,9 @@
 // Project: Flight Fetcher / Author: Alex Freidah
 //
 // Defines the configuration structure and HCL loading for the flight fetcher
-// service. Covers location, poll interval, OpenSky credentials, and database
-// connection settings. Secrets are templated into the HCL file by Vault.
+// service. Covers location, poll interval, OpenSky credentials, database
+// connection settings, and notification backends. Secrets are templated into
+// the HCL file by Vault.
 // -------------------------------------------------------------------------------
 
 package config
@@ -27,16 +28,16 @@ type rawConfig struct {
 	PollInterval      string `hcl:"poll_interval"`
 	EnrichmentRefresh string `hcl:"enrichment_refresh,optional"`
 
-	Location      Location              `hcl:"location,block"`
-	OpenSky       OpenSkyConfig         `hcl:"opensky,block"`
-	Redis         RedisConfig           `hcl:"redis,block"`
-	Postgres      PostgresConfig        `hcl:"postgres,block"`
-	AirLabs       *AirLabsConfig        `hcl:"airlabs,block"`
-	FlightAware   *FlightAwareConfig    `hcl:"flightaware,block"`
-	Server        *ServerConfig         `hcl:"server,block"`
+	Location      Location                `hcl:"location,block"`
+	OpenSky       OpenSkyConfig           `hcl:"opensky,block"`
+	Redis         RedisConfig             `hcl:"redis,block"`
+	Postgres      PostgresConfig          `hcl:"postgres,block"`
+	AirLabs       *AirLabsConfig          `hcl:"airlabs,block"`
+	FlightAware   *FlightAwareConfig      `hcl:"flightaware,block"`
+	Server        *ServerConfig           `hcl:"server,block"`
 	SquawkMonitor *rawSquawkMonitorConfig `hcl:"squawk_monitor,block"`
-	Retention     *rawRetentionConfig   `hcl:"retention,block"`
-	Discord       *DiscordConfig        `hcl:"discord,block"`
+	Retention     *rawRetentionConfig     `hcl:"retention,block"`
+	Notifications *rawNotificationsConfig `hcl:"notifications,block"`
 }
 
 type rawSquawkMonitorConfig struct {
@@ -48,6 +49,11 @@ type rawRetentionConfig struct {
 	AlertsMaxAge    string `hcl:"alerts_max_age"`
 	RoutesMaxAge    string `hcl:"routes_max_age,optional"`
 	Interval        string `hcl:"interval,optional"`
+}
+
+type rawNotificationsConfig struct {
+	Discord  []DiscordConfig  `hcl:"discord,block"`
+	Telegram []TelegramConfig `hcl:"telegram,block"`
 }
 
 // -------------------------------------------------------------------------
@@ -69,7 +75,7 @@ type Config struct {
 
 	SquawkMonitor *SquawkMonitorConfig
 	Retention     *RetentionConfig
-	Discord       *DiscordConfig
+	Notifications *NotificationsConfig
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -122,11 +128,6 @@ type FlightAwareConfig struct {
 	APIKey string `hcl:"api_key"`
 }
 
-// DiscordConfig holds settings for Discord webhook notifications.
-type DiscordConfig struct {
-	WebhookURL string `hcl:"webhook_url"`
-}
-
 // SquawkMonitorConfig holds validated settings for the global emergency squawk monitor.
 type SquawkMonitorConfig struct {
 	Poll time.Duration
@@ -138,6 +139,23 @@ type RetentionConfig struct {
 	Alerts        time.Duration
 	Routes        time.Duration
 	CleanInterval time.Duration
+}
+
+// NotificationsConfig holds all configured notification backends.
+type NotificationsConfig struct {
+	Discord  []DiscordConfig
+	Telegram []TelegramConfig
+}
+
+// DiscordConfig holds settings for a Discord webhook notification target.
+type DiscordConfig struct {
+	WebhookURL string `hcl:"webhook_url"`
+}
+
+// TelegramConfig holds settings for a Telegram Bot API notification target.
+type TelegramConfig struct {
+	BotToken string `hcl:"bot_token"`
+	ChatID   string `hcl:"chat_id"`
 }
 
 // -------------------------------------------------------------------------
@@ -201,9 +219,6 @@ func (r *rawConfig) parse() (*Config, error) {
 	if r.FlightAware != nil && r.FlightAware.APIKey == "" {
 		return nil, errors.New("flightaware.api_key is required when flightaware block is present")
 	}
-	if r.Discord != nil && r.Discord.WebhookURL == "" {
-		return nil, errors.New("discord.webhook_url is required when discord block is present")
-	}
 
 	cfg := &Config{
 		Poll:           poll,
@@ -215,7 +230,6 @@ func (r *rawConfig) parse() (*Config, error) {
 		AirLabs:        r.AirLabs,
 		FlightAware:    r.FlightAware,
 		Server:         r.Server,
-		Discord:        r.Discord,
 	}
 
 	if r.SquawkMonitor != nil {
@@ -232,6 +246,14 @@ func (r *rawConfig) parse() (*Config, error) {
 			return nil, err
 		}
 		cfg.Retention = ret
+	}
+
+	if r.Notifications != nil {
+		notif, err := parseNotifications(r.Notifications)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Notifications = notif
 	}
 
 	return cfg, nil
@@ -269,5 +291,26 @@ func parseRetention(r *rawRetentionConfig) (*RetentionConfig, error) {
 		Alerts:        alerts,
 		Routes:        routes,
 		CleanInterval: cleanInterval,
+	}, nil
+}
+
+// parseNotifications validates each notification backend config.
+func parseNotifications(r *rawNotificationsConfig) (*NotificationsConfig, error) {
+	for i, d := range r.Discord {
+		if d.WebhookURL == "" {
+			return nil, fmt.Errorf("notifications.discord[%d].webhook_url is required", i)
+		}
+	}
+	for i, t := range r.Telegram {
+		if t.BotToken == "" {
+			return nil, fmt.Errorf("notifications.telegram[%d].bot_token is required", i)
+		}
+		if t.ChatID == "" {
+			return nil, fmt.Errorf("notifications.telegram[%d].chat_id is required", i)
+		}
+	}
+	return &NotificationsConfig{
+		Discord:  r.Discord,
+		Telegram: r.Telegram,
 	}, nil
 }

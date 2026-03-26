@@ -50,9 +50,17 @@ squawk_monitor {
   interval = "60s"
 }
 
-# Optional: Discord webhook notifications for emergency squawk alerts
-discord {
-  webhook_url = "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+# Optional: notification backends for emergency squawk alerts.
+# Multiple blocks of the same type are supported (e.g., two Discord webhooks).
+notifications {
+  discord {
+    webhook_url = "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+  }
+
+  # telegram {
+  #   bot_token = "YOUR_BOT_TOKEN"
+  #   chat_id   = "YOUR_CHAT_ID"
+  # }
 }
 
 # Optional: automatic cleanup of old data

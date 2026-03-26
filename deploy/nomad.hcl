@@ -121,8 +121,10 @@ retention {
   routes_max_age    = "24h"
 }
 
-discord {
-  webhook_url = "{{ .Data.data.discord_webhook_url }}"
+notifications {
+  discord {
+    webhook_url = "{{ .Data.data.discord_webhook_url }}"
+  }
 }
 {{ end }}
 EOH

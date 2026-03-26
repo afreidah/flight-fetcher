@@ -18,7 +18,7 @@ A self-hosted aircraft tracking service written in Go that monitors airspace aro
 
 * **Circuit Breaking** - All external API clients share a common HTTP client with exponential backoff on rate limits (429), server errors (5xx), and transport failures. This prevents request storms against down services and allows automatic recovery.
 
-* **Squawk Code Tracking** - Parses transponder squawk codes from OpenSky data for all local aircraft. A separate background worker optionally polls the global OpenSky endpoint to detect emergency squawk codes worldwide (7500 hijack, 7600 radio failure, 7700 general emergency), with deduplication to prevent duplicate alerts. Detected alerts can be sent to pluggable notification backends (Discord, with more planned).
+* **Squawk Code Tracking** - Parses transponder squawk codes from OpenSky data for all local aircraft. A separate background worker optionally polls the global OpenSky endpoint to detect emergency squawk codes worldwide (7500 hijack, 7600 radio failure, 7700 general emergency), with deduplication to prevent duplicate alerts. Detected alerts can be sent to pluggable notification backends (Discord, Telegram).
 
 * **Dual Storage** - Current flight state is written to Redis with a TTL of 3x the poll interval, so aircraft automatically disappear when they leave the area. Historical sightings, aircraft metadata, flight routes, and squawk alerts are persisted in PostgreSQL via sqlc-generated queries, with goose migrations run automatically on startup.
 
@@ -131,8 +131,14 @@ retention {
   routes_max_age    = "24h"
 }
 
-discord {
-  webhook_url = "https://discord.com/api/webhooks/..."
+notifications {
+  discord {
+    webhook_url = "https://discord.com/api/webhooks/..."
+  }
+  telegram {
+    bot_token = "123456:ABC-DEF..."
+    chat_id   = "987654321"
+  }
 }
 ```
 
@@ -154,7 +160,7 @@ discord {
 | `flightaware` | FlightAware AeroAPI key for flight route enrichment (fallback) |
 | `squawk_monitor` | Global emergency squawk monitoring (`interval` between scans) |
 | `retention` | Automatic cleanup of old data (`sightings_max_age`, `alerts_max_age`, `routes_max_age`) |
-| `discord` | Discord webhook URL for emergency squawk notifications |
+| `notifications` | Notification backends for squawk alerts. Contains repeatable `discord` and `telegram` sub-blocks. |
 
 ### Command-Line Flags
 
@@ -327,6 +333,7 @@ internal/
   geo/                      # haversine distance, bbox calculation
   notify/                   # notification interface and fan-out manager
     discord/                # Discord webhook notification backend
+    telegram/               # Telegram Bot API notification backend
   observe/                  # OpenTelemetry + Prometheus initialization
   poller/                   # polling loop with async enrichment worker pool
   retention/                # batched data retention cleanup worker
