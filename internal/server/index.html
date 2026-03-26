@@ -73,10 +73,6 @@
     h2.section-title::before { content: "▾ "; font-size: 0.7rem; }
     h2.section-title.collapsed::before { content: "▸ "; }
     .section-body.collapsed { display: none; }
-    .tfr-row { margin-bottom: 2px; background: #e8eef6; border: 1px solid #d8d0e0; border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.8rem; display: flex; gap: 0.5rem; align-items: center; }
-    .tfr-badge { display: inline-block; color: #fff; font-size: 0.6rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; white-space: nowrap; min-width: 55px; text-align: center; }
-    .tfr-desc { flex: 1; color: #4a4055; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tfr-state { color: #a08e9a; width: 25px; flex-shrink: 0; text-align: center; }
 
     /* Right pane: map + detail */
     .right { flex: 1; overflow-y: auto; border-left: 1px solid #f0c6c6; }
@@ -102,7 +98,6 @@
   <div class="main">
     <div class="left">
       <div id="squawk-section"></div>
-      <div id="tfr-section"></div>
       <div class="col-headers" id="col-headers">
         <span class="col-icao sort-active" onclick="setSort('icao24')">ICAO24</span>
         <span class="col-callsign" onclick="setSort('callsign')">Callsign</span>
@@ -594,50 +589,12 @@
       if (body) body.classList.toggle("collapsed");
     }
 
-    var tfrTypeColors = {
-      "HAZARDS": "#c87533", "VIP": "#c44", "SECURITY": "#c44",
-      "SPACE OPERATIONS": "#3a5a8c", "AIR SHOWS/SPORTS": "#5b7a3a",
-      "SPECIAL": "#8e5a8c", "UAS PUBLIC GATHERING": "#8e7a3a"
-    };
-    var tfrTypeLabels = {
-      "HAZARDS": "Hazard", "VIP": "VIP", "SECURITY": "Security",
-      "SPACE OPERATIONS": "Space Ops", "AIR SHOWS/SPORTS": "Air Show",
-      "SPECIAL": "Special", "UAS PUBLIC GATHERING": "UAS/Drone"
-    };
-
-    async function loadTFRs() {
-      var el = document.getElementById("tfr-section");
-      try {
-        var resp = await fetch("/api/tfrs");
-        var tfrs = await resp.json();
-        if (!tfrs || tfrs.length === 0) { el.innerHTML = ""; return; }
-        var collapsed = el.querySelector(".section-title.collapsed") ? " collapsed" : "";
-        var html = '<h2 class="section-title' + collapsed + '" onclick="toggleSection(this)">Active TFRs (' + tfrs.length + ')</h2>';
-        html += '<div class="section-body' + collapsed + '">';
-        tfrs.forEach(function(t) {
-          var color = tfrTypeColors[t.type] || "#888";
-          var label = tfrTypeLabels[t.type] || t.type;
-          html += '<div class="tfr-row">' +
-            '<span class="tfr-badge" style="background:' + color + '">' + esc(label) + '</span>' +
-            '<span class="tfr-state">' + esc(t.state) + '</span>' +
-            '<span class="tfr-desc" title="' + esc(t.description) + '">' + esc(t.description) + '</span>' +
-          '</div>';
-        });
-        html += '</div>';
-        el.innerHTML = html;
-      } catch (e) {
-        el.innerHTML = "";
-      }
-    }
-
     initMap();
     var refreshSec = {{REFRESH}};
     loadFlights();
     loadSquawkAlerts();
-    loadTFRs();
     setInterval(loadFlights, refreshSec * 1000);
     setInterval(loadSquawkAlerts, refreshSec * 6000);
-    setInterval(loadTFRs, 15 * 60 * 1000);
   </script>
 </body>
 </html>

@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/airlabs"
@@ -38,7 +37,6 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/dump1090"
 	"github.com/afreidah/flight-fetcher/internal/store"
-	"github.com/afreidah/flight-fetcher/internal/tfr"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -146,16 +144,12 @@ func main() {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	tfrCache := tfr.NewCache()
-	g.Go(func() error { tfrCache.Run(ctx, 15*time.Minute); return nil })
-
 	if cfg.Server != nil && cfg.Server.Listen != "" {
 		srv := server.New(&server.Options{
 			Flights:    redisStore,
 			Aircraft:   pgStore,
 			Routes:     pgStore,
 			Alerts:     pgStore,
-			TFRs:       tfrCache,
 			Images:     hexdbClient,
 			Pingers: []server.HealthPinger{
 				{Name: "redis", Pinger: redisStore},
