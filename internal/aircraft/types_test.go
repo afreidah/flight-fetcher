@@ -42,6 +42,11 @@ func TestIsSentinel(t *testing.T) {
 			info: Info{ICAO24: "abc123", Registration: "N12345", ManufacturerName: "Boeing", Type: "737-800", OperatorFlagCode: "UAL"},
 			want: false,
 		},
+		{
+			name: "new fields only does not affect sentinel",
+			info: Info{ICAO24: "abc123", ICAOTypeCode: "B738", RegisteredOwners: "United Airlines"},
+			want: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -51,3 +56,4 @@ func TestIsSentinel(t *testing.T) {
 		})
 	}
 }
+

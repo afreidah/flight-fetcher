@@ -20,6 +20,9 @@ type Info struct {
 	ManufacturerName string `json:"manufacturer_name"`
 	Type             string `json:"type"`
 	OperatorFlagCode string `json:"operator_flag_code"`
+	ICAOTypeCode     string `json:"icao_type_code,omitempty"`
+	RegisteredOwners string `json:"registered_owners,omitempty"`
+	ImageURL         string `json:"image_url,omitempty"`
 }
 
 // IsSentinel returns true if the record is a negative cache entry with no
@@ -27,3 +30,4 @@ type Info struct {
 func (a *Info) IsSentinel() bool {
 	return a.Registration == "" && a.ManufacturerName == "" && a.Type == ""
 }
+

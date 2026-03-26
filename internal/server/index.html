@@ -324,7 +324,9 @@
 
     function buildDetail(data) {
       var s = data.state;
-      var t = '<table>';
+      var imgURL = data.aircraft ? data.aircraft.image_url : "";
+      var t = '<div style="display:flex;gap:1rem;align-items:flex-start">';
+      t += '<table>';
       t += section("Flight State");
       t += row("ICAO24", s.icao24);
       t += row("Callsign", s.callsign.trim() || "-");
@@ -346,12 +348,18 @@
       if (data.aircraft) {
         var a = data.aircraft;
         t += section("Aircraft Metadata");
-        t += row("Registration", a.Registration || "-");
-        t += row("Manufacturer", a.ManufacturerName || "-");
-        t += row("Type", a.Type || "-");
-        t += row("Operator", a.OperatorFlagCode || "-");
+        t += row("Registration", a.registration || "-");
+        t += row("Manufacturer", a.manufacturer_name || "-");
+        t += row("Type", a.type || "-");
+        t += row("ICAO Type Code", a.icao_type_code || "-");
+        t += row("Owner", a.registered_owners || "-");
+        t += row("Operator", a.operator_flag_code || "-");
       }
       t += '</table>';
+      if (imgURL) {
+        t += '<div style="flex:1"><img src="' + esc(imgURL) + '" alt="Aircraft photo" style="width:100%;border-radius:6px" onerror="this.parentElement.style.display=\'none\'"></div>';
+      }
+      t += '</div>';
       return t;
     }
 
@@ -432,11 +440,21 @@
         var metaResp = await fetch("/api/aircraft/" + encodeURIComponent(alert.icao24));
         if (metaResp.ok) {
           var a = await metaResp.json();
+          t += '<tr><td colspan="2" style="padding:0"><div style="display:flex;gap:1rem;padding:0.5rem 0.75rem;align-items:flex-start">';
+          t += '<div>';
+          t += '<table>';
           t += section("Aircraft Metadata");
-          t += row("Registration", a.Registration || "-");
-          t += row("Manufacturer", a.ManufacturerName || "-");
-          t += row("Type", a.Type || "-");
-          t += row("Operator", a.OperatorFlagCode || "-");
+          t += row("Registration", a.registration || "-");
+          t += row("Manufacturer", a.manufacturer_name || "-");
+          t += row("Type", a.type || "-");
+          t += row("ICAO Type Code", a.icao_type_code || "-");
+          t += row("Owner", a.registered_owners || "-");
+          t += row("Operator", a.operator_flag_code || "-");
+          t += '</table></div>';
+          if (a.image_url) {
+            t += '<div style="flex:1"><img src="' + esc(a.image_url) + '" alt="Aircraft photo" style="width:100%;border-radius:6px" onerror="this.parentElement.style.display=\'none\'"></div>';
+          }
+          t += '</div></td></tr>';
         }
       } catch (e) {}
       if (alert.callsign) {
