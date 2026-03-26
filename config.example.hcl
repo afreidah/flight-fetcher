@@ -50,6 +50,11 @@ squawk_monitor {
   interval = "60s"
 }
 
+# Optional: Discord webhook notifications for emergency squawk alerts
+discord {
+  webhook_url = "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+}
+
 # Optional: automatic cleanup of old data
 retention {
   sightings_max_age = "720h"

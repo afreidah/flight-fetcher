@@ -501,6 +501,11 @@ postgres { dsn = "" }
 			wantErr: "flightaware.api_key",
 		},
 		{
+			name:    "empty discord webhook url",
+			config:  validBase(`discord { webhook_url = "" }`),
+			wantErr: "discord.webhook_url",
+		},
+		{
 			name:    "invalid squawk monitor interval",
 			config:  validBase(`squawk_monitor { interval = "bad" }`),
 			wantErr: "squawk_monitor.interval",

@@ -13,12 +13,14 @@ package squawk
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
+	"github.com/afreidah/flight-fetcher/internal/notify"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
 
@@ -75,6 +77,7 @@ type Monitor struct {
 	source   GlobalFlightSource
 	store    AlertStore
 	enricher enricher.Interface
+	notifier notify.Notifier
 	interval time.Duration
 }
 
@@ -83,11 +86,14 @@ type Monitor struct {
 // -------------------------------------------------------------------------
 
 // New creates a Monitor with the given dependencies and poll interval.
-func New(source GlobalFlightSource, store AlertStore, enr enricher.Interface, interval time.Duration) *Monitor {
+// The notifier receives alerts for all detected emergencies; use a
+// notify.Manager to fan out to multiple backends.
+func New(source GlobalFlightSource, store AlertStore, enr enricher.Interface, notifier notify.Notifier, interval time.Duration) *Monitor {
 	return &Monitor{
 		source:   source,
 		store:    store,
 		enricher: enr,
+		notifier: notifier,
 		interval: interval,
 	}
 }
@@ -154,6 +160,8 @@ func (m *Monitor) scan(ctx context.Context) {
 				slog.String("error", err.Error()))
 		}
 
+		m.sendNotifications(ctx, sv.ICAO24, callsign, sv.Squawk, sv.Latitude, sv.Longitude)
+
 		m.enricher.Enrich(ctx, sv.ICAO24)
 		if callsign != "" {
 			m.enricher.EnrichRoute(ctx, callsign)
@@ -169,4 +177,43 @@ func (m *Monitor) scan(ctx context.Context) {
 	slog.InfoContext(ctx, "squawk scan complete",
 		slog.Int("total_aircraft", len(resp.States)),
 		slog.Int("emergency_count", count))
+}
+
+// sendNotifications sends an alert via the configured notifier. Errors are
+// logged but do not interrupt the scan loop.
+func (m *Monitor) sendNotifications(ctx context.Context, icao24, callsign, code string, lat, lon float64) {
+	if m.notifier == nil {
+		return
+	}
+
+	msg := notify.Message{
+		Title: "Emergency Squawk: " + squawkLabel(code),
+		Body:  fmt.Sprintf("Aircraft %s broadcasting squawk %s", icao24, code),
+		Fields: []notify.Field{
+			{Name: "ICAO24", Value: icao24},
+			{Name: "Callsign", Value: callsign},
+			{Name: "Squawk", Value: code + " (" + squawkLabel(code) + ")"},
+			{Name: "Position", Value: fmt.Sprintf("%.4f, %.4f", lat, lon)},
+		},
+	}
+
+	if err := m.notifier.Send(ctx, msg); err != nil {
+		slog.WarnContext(ctx, "failed to send notification",
+			slog.String("icao24", icao24),
+			slog.String("error", err.Error()))
+	}
+}
+
+// squawkLabel returns a human-readable description for a squawk code.
+func squawkLabel(code string) string {
+	switch code {
+	case SquawkHijack:
+		return "Hijack"
+	case SquawkRadioFailure:
+		return "Radio Failure"
+	case SquawkEmergency:
+		return "General Emergency"
+	default:
+		return "Unknown"
+	}
 }
