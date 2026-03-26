@@ -127,3 +127,100 @@ func TestClassify(t *testing.T) {
 		})
 	}
 }
+
+func TestLookupType(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		wantNil  bool
+		wantDesc string
+		wantWTC  string
+	}{
+		{name: "B738", code: "B738", wantDesc: "L2J", wantWTC: "M"},
+		{name: "C172", code: "C172", wantDesc: "L1P", wantWTC: "L"},
+		{name: "B77W heavy", code: "B77W", wantDesc: "L2J", wantWTC: "H"},
+		{name: "case insensitive", code: "b738", wantDesc: "L2J", wantWTC: "M"},
+		{name: "not found", code: "XX99", wantNil: true},
+		{name: "empty", code: "", wantNil: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := LookupType(tt.code)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("LookupType(%q) = %+v, want nil", tt.code, got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("LookupType(%q) = nil, want result", tt.code)
+			}
+			if got.Description != tt.wantDesc {
+				t.Errorf("Description = %q, want %q", got.Description, tt.wantDesc)
+			}
+			if got.WTC != tt.wantWTC {
+				t.Errorf("WTC = %q, want %q", got.WTC, tt.wantWTC)
+			}
+		})
+	}
+}
+
+func TestDescribeAircraftClass(t *testing.T) {
+	tests := []struct {
+		desc string
+		want string
+	}{
+		{"L2J", "Land, 2 engine(s), Jet"},
+		{"L1P", "Land, 1 engine(s), Piston"},
+		{"L4T", "Land, 4 engine(s), Turboprop"},
+		{"S2J", "Sea, 2 engine(s), Jet"},
+		{"A1P", "Amphibian, 1 engine(s), Piston"},
+		{"H1T", "Helicopter"},
+		{"G1P", "Gyrocopter"},
+		{"T2T", "Tiltrotor"},
+		{"L1E", "Land, 1 engine(s), Electric"},
+		{"", ""},
+		{"AB", "AB"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := DescribeAircraftClass(tt.desc)
+			if got != tt.want {
+				t.Errorf("DescribeAircraftClass(%q) = %q, want %q", tt.desc, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLookupAirline(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     string
+		wantNil  bool
+		wantName string
+	}{
+		{name: "United", code: "UAL", wantName: "United Airlines"},
+		{name: "Delta", code: "DAL", wantName: "Delta Air Lines"},
+		{name: "Southwest", code: "SWA", wantName: "Southwest Airlines"},
+		{name: "case insensitive", code: "ual", wantName: "United Airlines"},
+		{name: "not found", code: "XX99", wantNil: true},
+		{name: "empty", code: "", wantNil: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := LookupAirline(tt.code)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("LookupAirline(%q) = %+v, want nil", tt.code, got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("LookupAirline(%q) = nil, want result", tt.code)
+			}
+			if got.Name != tt.wantName {
+				t.Errorf("Name = %q, want %q", got.Name, tt.wantName)
+			}
+		})
+	}
+}

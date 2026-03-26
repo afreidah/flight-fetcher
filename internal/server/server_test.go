@@ -147,6 +147,30 @@ func TestHandleListFlights_Success(t *testing.T) {
 	}
 }
 
+// TestHandleListFlights_WithClassification verifies that classification and operator code are included.
+func TestHandleListFlights_WithClassification(t *testing.T) {
+	flights := []opensky.StateVector{
+		{ICAO24: "abc123", Callsign: "UAL123"},
+	}
+	meta := &aircraft.Info{ICAO24: "abc123", Registration: "N12345", OperatorFlagCode: "UAL", RegisteredOwners: "United Airlines"}
+	srv := New(&Options{Flights: &stubFlightLister{flights: flights}, Aircraft: &stubMetaReader{info: meta}, Version: "test", RefreshSec: 5})
+	req := httptest.NewRequest(http.MethodGet, "/api/flights", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	var got []map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	if got[0]["operator_code"] != "UAL" {
+		t.Errorf("operator_code = %v, want %q", got[0]["operator_code"], "UAL")
+	}
+}
+
 // TestHandleListFlights_Error verifies that a store error degrades to an empty array instead of 500.
 func TestHandleListFlights_Error(t *testing.T) {
 	srv := New(&Options{Flights: &stubFlightLister{err: errors.New("redis down")}, Aircraft: &stubMetaReader{}, Version: "test", RefreshSec: 5})
