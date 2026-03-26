@@ -136,3 +136,56 @@ func TestLookup_InvalidJSON(t *testing.T) {
 		t.Error("Lookup() expected error for invalid JSON, got nil")
 	}
 }
+
+// TestFetchImageURL_Success verifies that the image endpoint URL is resolved.
+func TestFetchImageURL_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("https://hexdb.io/static/aircraft-images/N12345.jpg"))
+	}))
+	defer srv.Close()
+
+	c := testClient(srv)
+	got := c.FetchImageURL(context.Background(), "abc123")
+	if got != "https://hexdb.io/static/aircraft-images/N12345.jpg" {
+		t.Errorf("FetchImageURL() = %q, want resolved URL", got)
+	}
+}
+
+// TestFetchImageURL_NotAvailable verifies that n/a response returns empty string.
+func TestFetchImageURL_NotAvailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("n/a"))
+	}))
+	defer srv.Close()
+
+	c := testClient(srv)
+	got := c.FetchImageURL(context.Background(), "abc123")
+	if got != "" {
+		t.Errorf("FetchImageURL() = %q, want empty for n/a", got)
+	}
+}
+
+// TestFetchImageURL_ServerError verifies that a non-200 returns empty string.
+func TestFetchImageURL_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := testClient(srv)
+	got := c.FetchImageURL(context.Background(), "abc123")
+	if got != "" {
+		t.Errorf("FetchImageURL() = %q, want empty for server error", got)
+	}
+}
+
+// TestFetchImageURL_TransportError verifies that a connection failure returns empty string.
+func TestFetchImageURL_TransportError(t *testing.T) {
+	c := testClient(httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
+	c.imageBaseURL = "http://127.0.0.1:1"
+
+	got := c.FetchImageURL(context.Background(), "abc123")
+	if got != "" {
+		t.Errorf("FetchImageURL() = %q, want empty for transport error", got)
+	}
+}

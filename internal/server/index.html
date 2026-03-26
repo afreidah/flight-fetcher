@@ -75,11 +75,15 @@
     #map { height: 450px; }
     #detail { padding: 0.75rem; }
     #detail:empty { display: none; }
-    #detail table { width: 100%; border-collapse: collapse; }
+    #detail table { border-collapse: collapse; }
     #detail td { padding: 0.3rem 0.75rem; font-size: 0.85rem; }
     #detail td:first-child { color: #a08e9a; width: 150px; }
     #detail .section { color: #e8879a; font-weight: 600; padding-top: 0.5rem; }
     #detail .none { color: #a08e9a; font-style: italic; padding: 1rem; text-align: center; }
+    .class-badge { display: inline-block; color: #fff; font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.5px; }
+    .class-military { background: #5b7a3a; }
+    .class-law_enforcement { background: #3a5a8c; }
+    .class-emergency { background: #c44; }
   </style>
 </head>
 <body>
@@ -113,6 +117,31 @@
     var map = null;
     var markers = {};
     var selectedMarker = null;
+
+    // Military ICAO24 hex ranges from tar1090-db
+    var milRanges = [
+      [0xadf7c8,0xafffff],[0x010070,0x01008f],[0x0a4000,0x0a4fff],
+      [0x33ff00,0x33ffff],[0x350000,0x37ffff],[0x3aa000,0x3affff],
+      [0x3b7000,0x3bffff],[0x3ea000,0x3ebfff],[0x3f4000,0x3fbfff],
+      [0x400000,0x40003f],[0x43c000,0x43cfff],[0x444000,0x446fff],
+      [0x44f000,0x44ffff],[0x457000,0x457fff],[0x45f400,0x45f4ff],
+      [0x468000,0x4683ff],[0x473c00,0x473c0f],[0x478100,0x4781ff],
+      [0x480000,0x480fff],[0x48d800,0x48d87f],[0x497c00,0x497cff],
+      [0x498420,0x49842f],[0x4b7000,0x4b7fff],[0x4b8200,0x4b82ff],
+      [0x70c070,0x70c07f],[0x710258,0x71028f],[0x710380,0x71039f],
+      [0x738a00,0x738aff],[0x7cf800,0x7cfaff],[0x800200,0x8002ff],
+      [0xc20000,0xc3ffff],[0xe40000,0xe41fff]
+    ];
+    // Client-side classification — only military is detectable from hex ranges.
+    // LE/EMS require owner data and are shown after clicking (via API).
+    function clientClassify(icao24) {
+      var v = parseInt(icao24, 16);
+      if (isNaN(v)) return "";
+      for (var i = 0; i < milRanges.length; i++) {
+        if (v >= milRanges[i][0] && v <= milRanges[i][1]) return "military";
+      }
+      return "";
+    }
 
     // Initialize the persistent map
     function initMap() {
@@ -164,8 +193,15 @@
       });
     }
 
+    function classBadge(cls) {
+      var labels = {"military": "MIL", "law_enforcement": "LE", "emergency": "EMS"};
+      if (!labels[cls]) return "";
+      return ' <span class="class-badge class-' + cls + '">' + labels[cls] + '</span>';
+    }
+
     function buildHeader(f) {
-      return '<span class="icao">' + esc(f.icao24) + '</span>' +
+      var badge = classBadge(clientClassify(f.icao24));
+      return '<span class="icao">' + esc(f.icao24) + badge + '</span>' +
         '<span class="callsign">' + esc(f.callsign.trim() || "-") + '</span>' +
         '<span class="col-country">' + esc(f.origin_country || "-") + '</span>' +
         '<span class="col-alt">' + fmtFt(f.baro_altitude) + '</span>' +
@@ -173,8 +209,9 @@
         '<span class="col-squawk">' + (f.squawk ? squawkLabel(f.squawk) : '') + '</span>';
     }
 
-    function planeIcon(heading, isSelected) {
-      var color = isSelected ? "#d96b7c" : "#7ea8d4";
+    function planeIcon(heading, isSelected, cls) {
+      var classColors = {"military": "#5b7a3a", "law_enforcement": "#3a5a8c", "emergency": "#c44"};
+      var color = isSelected ? "#d96b7c" : classColors[cls] || "#7ea8d4";
       var size = isSelected ? 24 : 18;
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" ' +
         'style="transform:rotate(' + (heading || 0) + 'deg)">' +
@@ -196,9 +233,9 @@
         var isSel = f.icao24 === selected;
         if (markers[f.icao24]) {
           markers[f.icao24].setLatLng(pos);
-          markers[f.icao24].setIcon(planeIcon(f.heading, isSel));
+          markers[f.icao24].setIcon(planeIcon(f.heading, isSel, clientClassify(f.icao24)));
         } else {
-          markers[f.icao24] = L.marker(pos, { icon: planeIcon(f.heading, isSel) }).addTo(map);
+          markers[f.icao24] = L.marker(pos, { icon: planeIcon(f.heading, isSel, clientClassify(f.icao24)) }).addTo(map);
           markers[f.icao24].on("click", function() { selectFlight(f.icao24); });
         }
         markers[f.icao24].bindTooltip(esc(f.callsign.trim() || f.icao24), { direction: "top", offset: [0, -10] });
@@ -283,7 +320,7 @@
         if (prev) prev.classList.remove("selected");
         var prevFlight = flightMap[selected];
         if (markers[selected] && prevFlight) {
-          markers[selected].setIcon(planeIcon(prevFlight.heading, false));
+          markers[selected].setIcon(planeIcon(prevFlight.heading, false, clientClassify(selected)));
         }
       }
       if (selected === icao24) {
@@ -297,7 +334,7 @@
       // Highlight marker and pan
       var f = flightMap[icao24];
       if (markers[icao24] && f) {
-        markers[icao24].setIcon(planeIcon(f.heading, true));
+        markers[icao24].setIcon(planeIcon(f.heading, true, clientClassify(icao24)));
         map.panTo(markers[icao24].getLatLng());
       }
       loadDetail(icao24);
@@ -326,9 +363,9 @@
       var s = data.state;
       var imgURL = data.aircraft ? data.aircraft.image_url : "";
       var t = '<div style="display:flex;gap:1rem;align-items:flex-start">';
-      t += '<table>';
+      t += '<table style="flex-shrink:0">';
       t += section("Flight State");
-      t += row("ICAO24", s.icao24);
+      t += rowHTML("ICAO24", esc(s.icao24) + classBadge(data.classification));
       t += row("Callsign", s.callsign.trim() || "-");
       t += row("Origin Country", s.origin_country);
       t += row("Latitude", s.latitude);
@@ -405,7 +442,7 @@
         if (prev) prev.classList.remove("selected");
         var prevFlight = flightMap[selected];
         if (markers[selected] && prevFlight) {
-          markers[selected].setIcon(planeIcon(prevFlight.heading, false));
+          markers[selected].setIcon(planeIcon(prevFlight.heading, false, clientClassify(selected)));
         }
       }
       selected = id;
@@ -418,7 +455,7 @@
         if (alert.lat && alert.lon) {
           if (markers["_squawk"]) map.removeLayer(markers["_squawk"]);
           markers["_squawk"] = L.marker([alert.lat, alert.lon], {
-            icon: planeIcon(0, true)
+            icon: planeIcon(0, true, clientClassify(alert.icao24))
           }).addTo(map);
           map.panTo([alert.lat, alert.lon]);
           map.setZoom(6);
