@@ -24,6 +24,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/notify"
 	"github.com/afreidah/flight-fetcher/internal/notify/discord"
+	"github.com/afreidah/flight-fetcher/internal/notify/telegram"
 	"github.com/afreidah/flight-fetcher/internal/observe"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/flightaware"
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -154,9 +155,15 @@ func main() {
 
 	if cfg.SquawkMonitor != nil {
 		notifyMgr := notify.NewManager()
-		if cfg.Discord != nil {
-			notifyMgr.Register(discord.New(cfg.Discord.WebhookURL))
-			slog.InfoContext(ctx, "discord notifications enabled")
+		if cfg.Notifications != nil {
+			for _, d := range cfg.Notifications.Discord {
+				notifyMgr.Register(discord.New(d.WebhookURL))
+				slog.InfoContext(ctx, "discord notifications enabled")
+			}
+			for _, t := range cfg.Notifications.Telegram {
+				notifyMgr.Register(telegram.New(t.BotToken, t.ChatID))
+				slog.InfoContext(ctx, "telegram notifications enabled")
+			}
 		}
 		squawkClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 		sm := squawk.New(squawkClient, pgStore, enr, notifyMgr, cfg.SquawkMonitor.Poll)

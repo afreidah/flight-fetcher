@@ -501,9 +501,33 @@ postgres { dsn = "" }
 			wantErr: "flightaware.api_key",
 		},
 		{
-			name:    "empty discord webhook url",
-			config:  validBase(`discord { webhook_url = "" }`),
-			wantErr: "discord.webhook_url",
+			name: "empty discord webhook url",
+			config: validBase(`notifications {
+  discord {
+    webhook_url = ""
+  }
+}`),
+			wantErr: "notifications.discord[0].webhook_url",
+		},
+		{
+			name: "empty telegram bot token",
+			config: validBase(`notifications {
+  telegram {
+    bot_token = ""
+    chat_id   = "123"
+  }
+}`),
+			wantErr: "notifications.telegram[0].bot_token",
+		},
+		{
+			name: "empty telegram chat id",
+			config: validBase(`notifications {
+  telegram {
+    bot_token = "tok"
+    chat_id   = ""
+  }
+}`),
+			wantErr: "notifications.telegram[0].chat_id",
 		},
 		{
 			name:    "invalid squawk monitor interval",
