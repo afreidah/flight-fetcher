@@ -530,6 +530,11 @@ postgres { dsn = "" }
 			wantErr: "notifications.telegram[0].chat_id",
 		},
 		{
+			name:    "empty dump1090 url",
+			config:  validBase(`dump1090 { url = "" }`),
+			wantErr: "dump1090.url",
+		},
+		{
 			name:    "invalid squawk monitor interval",
 			config:  validBase(`squawk_monitor { interval = "bad" }`),
 			wantErr: "squawk_monitor.interval",

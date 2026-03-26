@@ -68,7 +68,11 @@
     .squawk-row .row-header { color: #6b4c5a; }
     .squawk-row .icao { color: #d96b7c; }
 
-    h2.section-title { font-size: 0.9rem; padding: 0.5rem 0.5rem 0.25rem; color: #8e7a8a; }
+    h2.section-title { font-size: 0.9rem; padding: 0.5rem 0.5rem 0.25rem; color: #8e7a8a; cursor: pointer; user-select: none; }
+    h2.section-title:hover { color: #6b4c5a; }
+    h2.section-title::before { content: "▾ "; font-size: 0.7rem; }
+    h2.section-title.collapsed::before { content: "▸ "; }
+    .section-body.collapsed { display: none; }
 
     /* Right pane: map + detail */
     .right { flex: 1; overflow-y: auto; border-left: 1px solid #f0c6c6; }
@@ -426,7 +430,9 @@
         var resp = await fetch("/api/squawk-alerts");
         cachedAlerts = await resp.json();
         if (!cachedAlerts || cachedAlerts.length === 0) { el.innerHTML = ""; return; }
-        var html = '<h2 class="section-title">Global Emergency Squawk Alerts (last 24h)</h2>';
+        var collapsed = el.querySelector(".section-title.collapsed") ? " collapsed" : "";
+        var html = '<h2 class="section-title' + collapsed + '" onclick="toggleSection(this)">Emergency Squawk Alerts (' + cachedAlerts.length + ')</h2>';
+        html += '<div class="section-body' + collapsed + '">';
         cachedAlerts.forEach(function(a, i) {
           var id = "squawk-" + i;
           var label = {"7500": "HIJACK", "7600": "RADIO FAILURE", "7700": "EMERGENCY"}[a.squawk] || a.squawk;
@@ -440,6 +446,7 @@
             '</div>' +
           '</div>';
         });
+        html += '</div>';
         el.innerHTML = html;
       } catch (e) {
         el.innerHTML = "";
@@ -574,6 +581,12 @@
       var d = document.createElement("div");
       d.textContent = s;
       return d.innerHTML;
+    }
+
+    function toggleSection(header) {
+      header.classList.toggle("collapsed");
+      var body = header.nextElementSibling;
+      if (body) body.classList.toggle("collapsed");
     }
 
     initMap();

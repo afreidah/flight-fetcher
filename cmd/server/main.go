@@ -35,6 +35,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/server"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
+	"github.com/afreidah/flight-fetcher/internal/apiclient/dump1090"
 	"github.com/afreidah/flight-fetcher/internal/store"
 
 	"golang.org/x/sync/errgroup"
@@ -121,8 +122,14 @@ func main() {
 		RouteSources:    routeSources,
 		RouteStore:      pgStore,
 	})
+	var flightSource poller.FlightSource = oskyClient
+	if cfg.Dump1090 != nil {
+		flightSource = dump1090.NewClient(cfg.Dump1090.URL)
+		slog.InfoContext(ctx, "using dump1090 as flight source", slog.String("url", cfg.Dump1090.URL))
+	}
+
 	p := poller.New(&poller.Options{
-		Source:        oskyClient,
+		Source:        flightSource,
 		Cache:         redisStore,
 		Logger:        pgStore,
 		Enricher:      enr,

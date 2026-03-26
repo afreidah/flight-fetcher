@@ -64,6 +64,11 @@ notifications {
 }
 
 # Optional: automatic cleanup of old data
+# Optional: local ADS-B receiver (dump1090/readsb/dump1090-fa)
+# dump1090 {
+#   url = "http://piaware:8080"
+# }
+
 retention {
   sightings_max_age = "720h"
   alerts_max_age    = "168h"
