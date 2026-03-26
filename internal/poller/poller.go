@@ -59,6 +59,10 @@ type SightingLogger interface {
 const (
 	enrichWorkers   = 5
 	enrichQueueSize = 500
+
+	// sightingMinMove is the minimum position change (in degrees) required
+	// to log a new sighting. ~0.005° ≈ 500m at mid-latitudes.
+	sightingMinMove = 0.005
 )
 
 // -------------------------------------------------------------------------
@@ -69,6 +73,12 @@ const (
 type enrichRequest struct {
 	icao24   string
 	callsign string
+}
+
+// lastPos tracks the last logged position for sighting deduplication.
+type lastPos struct {
+	lat float64
+	lon float64
 }
 
 // Options holds the dependencies and configuration for the poller.
@@ -97,6 +107,7 @@ type Poller struct {
 	seenICAO   map[string]bool
 	seenRoutes map[string]bool
 	lastEvict  time.Time
+	lastSight  map[string]lastPos
 }
 
 // -------------------------------------------------------------------------
@@ -126,6 +137,7 @@ func New(opts *Options) *Poller {
 		seenICAO:      make(map[string]bool),
 		seenRoutes:    make(map[string]bool),
 		lastEvict:     time.Now(),
+		lastSight:     make(map[string]lastPos),
 	}
 }
 
@@ -170,6 +182,7 @@ func (p *Poller) poll(ctx context.Context) {
 			slog.Int("route_count", len(p.seenRoutes)))
 		p.seenICAO = make(map[string]bool)
 		p.seenRoutes = make(map[string]bool)
+		p.lastSight = make(map[string]lastPos)
 		p.lastEvict = time.Now()
 	}
 	p.mu.Unlock()
@@ -198,10 +211,12 @@ func (p *Poller) poll(ctx context.Context) {
 				slog.String("error", err.Error()))
 		}
 
-		if err := p.opts.Logger.LogSighting(ctx, sv.ICAO24, sv.Latitude, sv.Longitude, dist); err != nil {
-			slog.WarnContext(ctx, "sighting log failed",
-				slog.String("icao24", sv.ICAO24),
-				slog.String("error", err.Error()))
+		if p.positionChanged(sv.ICAO24, sv.Latitude, sv.Longitude) {
+			if err := p.opts.Logger.LogSighting(ctx, sv.ICAO24, sv.Latitude, sv.Longitude, dist); err != nil {
+				slog.WarnContext(ctx, "sighting log failed",
+					slog.String("icao24", sv.ICAO24),
+					slog.String("error", err.Error()))
+			}
 		}
 
 		callsign := strings.TrimSpace(sv.Callsign)
@@ -263,4 +278,33 @@ func (p *Poller) enrichWorker(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// positionChanged returns true if the aircraft has moved enough since the
+// last logged sighting to warrant a new record. Updates the tracking map.
+func (p *Poller) positionChanged(icao24 string, lat, lon float64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	prev, ok := p.lastSight[icao24]
+	if !ok {
+		p.lastSight[icao24] = lastPos{lat: lat, lon: lon}
+		return true
+	}
+
+	dlat := lat - prev.lat
+	dlon := lon - prev.lon
+	if dlat < 0 {
+		dlat = -dlat
+	}
+	if dlon < 0 {
+		dlon = -dlon
+	}
+
+	if dlat < sightingMinMove && dlon < sightingMinMove {
+		return false
+	}
+
+	p.lastSight[icao24] = lastPos{lat: lat, lon: lon}
+	return true
 }
