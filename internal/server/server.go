@@ -22,6 +22,7 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
+	"github.com/afreidah/flight-fetcher/internal/tfr"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -57,6 +58,11 @@ type ImageFetcher interface {
 	FetchImageURL(ctx context.Context, icao24 string) string
 }
 
+// TFRLister returns the current list of active TFRs.
+type TFRLister interface {
+	List() []tfr.Restriction
+}
+
 // Pinger checks if a backend dependency is reachable.
 type Pinger interface {
 	Ping(ctx context.Context) error
@@ -78,6 +84,7 @@ type Options struct {
 	Aircraft   AircraftMetaReader
 	Routes     RouteReader
 	Alerts     SquawkAlertReader
+	TFRs       TFRLister
 	Images     ImageFetcher
 	Pingers    []HealthPinger
 	Version    string
@@ -118,6 +125,7 @@ func New(opts *Options) *Server {
 	s.mux.HandleFunc("GET /api/squawk-alerts", s.handleSquawkAlerts)
 	s.mux.HandleFunc("GET /api/aircraft/{icao24}", s.handleGetAircraft)
 	s.mux.HandleFunc("GET /api/routes/{callsign}", s.handleGetRoute)
+	s.mux.HandleFunc("GET /api/tfrs", s.handleTFRs)
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.Handle("GET /metrics", promhttp.Handler())
 	return s
@@ -269,6 +277,15 @@ func (s *Server) handleSquawkAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(r.Context(), w, alerts)
+}
+
+// handleTFRs returns the current list of active TFRs.
+func (s *Server) handleTFRs(w http.ResponseWriter, r *http.Request) {
+	if s.opts.TFRs == nil {
+		writeJSON(r.Context(), w, []any{})
+		return
+	}
+	writeJSON(r.Context(), w, s.opts.TFRs.List())
 }
 
 // handleGetAircraft returns cached aircraft metadata by ICAO24.

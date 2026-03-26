@@ -38,6 +38,7 @@ type rawConfig struct {
 	SquawkMonitor *rawSquawkMonitorConfig `hcl:"squawk_monitor,block"`
 	Retention     *rawRetentionConfig     `hcl:"retention,block"`
 	Notifications *rawNotificationsConfig `hcl:"notifications,block"`
+	Dump1090      *Dump1090Config         `hcl:"dump1090,block"`
 }
 
 type rawSquawkMonitorConfig struct {
@@ -76,6 +77,7 @@ type Config struct {
 	SquawkMonitor *SquawkMonitorConfig
 	Retention     *RetentionConfig
 	Notifications *NotificationsConfig
+	Dump1090      *Dump1090Config
 }
 
 // Location defines the center point and radius for aircraft search.
@@ -158,6 +160,11 @@ type TelegramConfig struct {
 	ChatID   string `hcl:"chat_id"`
 }
 
+// Dump1090Config holds settings for a local dump1090/readsb ADS-B receiver.
+type Dump1090Config struct {
+	URL string `hcl:"url"`
+}
+
 // -------------------------------------------------------------------------
 // PUBLIC API
 // -------------------------------------------------------------------------
@@ -219,6 +226,9 @@ func (r *rawConfig) parse() (*Config, error) {
 	if r.FlightAware != nil && r.FlightAware.APIKey == "" {
 		return nil, errors.New("flightaware.api_key is required when flightaware block is present")
 	}
+	if r.Dump1090 != nil && r.Dump1090.URL == "" {
+		return nil, errors.New("dump1090.url is required when dump1090 block is present")
+	}
 
 	cfg := &Config{
 		Poll:           poll,
@@ -230,6 +240,7 @@ func (r *rawConfig) parse() (*Config, error) {
 		AirLabs:        r.AirLabs,
 		FlightAware:    r.FlightAware,
 		Server:         r.Server,
+		Dump1090:       r.Dump1090,
 	}
 
 	if r.SquawkMonitor != nil {
