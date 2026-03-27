@@ -162,10 +162,7 @@ func (m *Monitor) scan(ctx context.Context) {
 
 		m.sendNotifications(ctx, sv.ICAO24, callsign, sv.Squawk, sv.Latitude, sv.Longitude)
 
-		m.enricher.Enrich(ctx, sv.ICAO24)
-		if callsign != "" {
-			m.enricher.EnrichRoute(ctx, callsign)
-		}
+		go m.enrichAsync(ctx, sv.ICAO24, callsign)
 
 		count++
 	}
@@ -201,6 +198,15 @@ func (m *Monitor) sendNotifications(ctx context.Context, icao24, callsign, code 
 		slog.WarnContext(ctx, "failed to send notification",
 			slog.String("icao24", icao24),
 			slog.String("error", err.Error()))
+	}
+}
+
+// enrichAsync runs aircraft and route enrichment in a background goroutine
+// so the scan loop is not blocked by external API calls.
+func (m *Monitor) enrichAsync(ctx context.Context, icao24, callsign string) {
+	m.enricher.Enrich(ctx, icao24)
+	if callsign != "" {
+		m.enricher.EnrichRoute(ctx, callsign)
 	}
 }
 

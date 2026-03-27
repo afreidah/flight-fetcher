@@ -59,7 +59,7 @@ type Options struct {
 // operations consumed by the poller and squawk monitor.
 type Interface interface {
 	Enrich(ctx context.Context, icao24 string) bool
-	EnrichRoute(ctx context.Context, callsign string) bool
+	EnrichRoute(ctx context.Context, callsign string) (ok bool, found bool)
 }
 
 // Enricher looks up and caches aircraft metadata and flight route information.
@@ -81,7 +81,7 @@ func New(opts *Options) *Enricher {
 // true when enrichment is complete (data cached or confirmed absent). Returns
 // false on transient errors so the caller can retry.
 func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
-	return enrich(ctx, enrichSpec[aircraft.Info]{
+	r := enrich(ctx, enrichSpec[aircraft.Info]{
 		label:    "aircraft",
 		keyLabel: "icao24",
 		key:      icao24,
@@ -97,17 +97,18 @@ func (e *Enricher) Enrich(ctx context.Context, icao24 string) bool {
 				slog.String("source", source))
 		},
 	})
+	return r.ok
 }
 
 // EnrichRoute looks up and caches flight route information if not already
-// known. Returns true when complete (cached or confirmed absent), false on
-// transient errors so the caller can retry. No-op (returns true) when route
-// enrichment is not configured.
-func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
+// known. Returns (ok, found) where ok means no transient error and found
+// means route data was actually located and saved. No-op (true, true) when
+// route enrichment is not configured.
+func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) (bool, bool) {
 	if len(e.opts.RouteSources) == 0 || e.opts.RouteStore == nil {
-		return true
+		return true, true
 	}
-	return enrich(ctx, enrichSpec[route.Info]{
+	r := enrich(ctx, enrichSpec[route.Info]{
 		label:    "route",
 		keyLabel: "callsign",
 		key:      callsign,
@@ -122,11 +123,18 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) bool {
 				slog.String("source", source))
 		},
 	})
+	return r.ok, r.found
 }
 
 // -------------------------------------------------------------------------
 // INTERNALS
 // -------------------------------------------------------------------------
+
+// enrichResult describes the outcome of an enrichment attempt.
+type enrichResult struct {
+	ok    bool // true if complete (no transient error)
+	found bool // true if data was found and saved
+}
 
 // enrichSpec parameterizes the shared enrichment logic for a given type.
 type enrichSpec[T any] struct {
@@ -141,16 +149,16 @@ type enrichSpec[T any] struct {
 }
 
 // enrich implements the shared check-cache → try-sources → save pattern.
-func enrich[T any](ctx context.Context, spec enrichSpec[T]) bool {
+func enrich[T any](ctx context.Context, spec enrichSpec[T]) enrichResult {
 	existing, err := spec.get(ctx, spec.key)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to check "+spec.label,
 			slog.String(spec.keyLabel, spec.key),
 			slog.String("error", err.Error()))
-		return false
+		return enrichResult{ok: false}
 	}
 	if existing != nil {
-		return true
+		return enrichResult{ok: true, found: true}
 	}
 
 	var result *T
@@ -187,7 +195,7 @@ func enrich[T any](ctx context.Context, spec enrichSpec[T]) bool {
 					slog.String("error", err.Error()))
 			}
 		}
-		return true
+		return enrichResult{ok: true, found: false}
 	}
 
 	if err := spec.save(ctx, result); err != nil {
@@ -195,5 +203,5 @@ func enrich[T any](ctx context.Context, spec enrichSpec[T]) bool {
 			slog.String(spec.keyLabel, spec.key),
 			slog.String("error", err.Error()))
 	}
-	return true
+	return enrichResult{ok: true, found: true}
 }

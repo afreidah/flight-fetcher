@@ -78,7 +78,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 		Times(1)
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any()).
-		Return(true).
+		Return(true, true).
 		Times(1)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: radiusKm, Interval: time.Minute, EvictInterval: time.Hour})
@@ -134,7 +134,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 		Return(true)
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any()).
-		Return(true)
+		Return(true, true)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	pollAndDrain(p, context.Background())
@@ -171,7 +171,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 		Return(true)
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), gomock.Any()).
-		Return(true)
+		Return(true, true)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	pollAndDrain(p, context.Background())
@@ -212,7 +212,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 		Times(1)
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), "AAL100").
-		Return(true).
+		Return(true, true).
 		Times(1)
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
@@ -258,7 +258,7 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 		Times(2)
 	enricher.EXPECT().
 		EnrichRoute(gomock.Any(), "AAL100").
-		Return(true).
+		Return(true, true).
 		Times(2)
 
 	// Use nanosecond eviction so it triggers on every poll after the first

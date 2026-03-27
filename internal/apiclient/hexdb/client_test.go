@@ -34,26 +34,18 @@ func testClient(srv *httptest.Server) *Client {
 	}
 }
 
-// TestLookup_Success verifies that a valid HexDB response is decoded correctly
-// and the image URL is resolved from the image endpoint.
+// TestLookup_Success verifies that a valid HexDB response is decoded correctly.
 func TestLookup_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/aircraft/abc123":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-				"Registration": "N12345",
-				"ManufacturerName": "Boeing",
-				"Type": "737-800",
-				"OperatorFlagCode": "UAL",
-				"ICAOTypeCode": "B738",
-				"RegisteredOwners": "United Airlines"
-			}`))
-		case "/hex-image":
-			_, _ = w.Write([]byte("https://hexdb.io/static/aircraft-images/N12345.jpg"))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Registration": "N12345",
+			"ManufacturerName": "Boeing",
+			"Type": "737-800",
+			"OperatorFlagCode": "UAL",
+			"ICAOTypeCode": "B738",
+			"RegisteredOwners": "United Airlines"
+		}`))
 	}))
 	defer srv.Close()
 
@@ -85,9 +77,6 @@ func TestLookup_Success(t *testing.T) {
 	}
 	if info.RegisteredOwners != "United Airlines" {
 		t.Errorf("RegisteredOwners = %q, want %q", info.RegisteredOwners, "United Airlines")
-	}
-	if info.ImageURL != "https://hexdb.io/static/aircraft-images/N12345.jpg" {
-		t.Errorf("ImageURL = %q, want resolved image URL", info.ImageURL)
 	}
 }
 

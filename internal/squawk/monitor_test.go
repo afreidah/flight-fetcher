@@ -12,6 +12,7 @@ package squawk
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,22 +63,39 @@ func (s *stubAlertStore) HasRecentSquawkAlert(_ context.Context, icao24, squawk 
 	return false, nil
 }
 
-// stubEnricher records enrichment calls.
+// stubEnricher records enrichment calls. Thread-safe for async enrichment.
 type stubEnricher struct {
+	mu       sync.Mutex
 	enriched []string
 	routes   []string
 }
 
 // Enrich records the ICAO24.
 func (s *stubEnricher) Enrich(_ context.Context, icao24 string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.enriched = append(s.enriched, icao24)
 	return true
 }
 
 // EnrichRoute records the callsign.
-func (s *stubEnricher) EnrichRoute(_ context.Context, callsign string) bool {
+func (s *stubEnricher) EnrichRoute(_ context.Context, callsign string) (bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.routes = append(s.routes, callsign)
-	return true
+	return true, true
+}
+
+func (s *stubEnricher) enrichedCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.enriched)
+}
+
+func (s *stubEnricher) routesCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.routes)
 }
 
 // -------------------------------------------------------------------------
@@ -99,6 +117,7 @@ func TestScan_DetectsEmergencySquawks(t *testing.T) {
 
 	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond) // allow async enrichment goroutines to complete
 
 	if len(store.alerts) != 2 {
 		t.Fatalf("len(alerts) = %d, want 2", len(store.alerts))
@@ -109,11 +128,11 @@ func TestScan_DetectsEmergencySquawks(t *testing.T) {
 	if store.alerts[1].icao24 != "a3" || store.alerts[1].squawk != "7500" {
 		t.Errorf("alert[1] = %+v, want icao24=a3 squawk=7500", store.alerts[1])
 	}
-	if len(enr.enriched) != 2 {
-		t.Errorf("len(enriched) = %d, want 2", len(enr.enriched))
+	if enr.enrichedCount() != 2 {
+		t.Errorf("len(enriched) = %d, want 2", enr.enrichedCount())
 	}
-	if len(enr.routes) != 2 {
-		t.Errorf("len(routes) = %d, want 2", len(enr.routes))
+	if enr.routesCount() != 2 {
+		t.Errorf("len(routes) = %d, want 2", enr.routesCount())
 	}
 }
 
@@ -132,6 +151,7 @@ func TestScan_NoEmergencies(t *testing.T) {
 
 	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond) // allow async enrichment goroutines to complete
 
 	if len(store.alerts) != 0 {
 		t.Errorf("len(alerts) = %d, want 0", len(store.alerts))
@@ -146,6 +166,7 @@ func TestScan_EmptyResponse(t *testing.T) {
 
 	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond) // allow async enrichment goroutines to complete
 
 	if len(store.alerts) != 0 {
 		t.Errorf("len(alerts) = %d, want 0", len(store.alerts))
@@ -160,6 +181,7 @@ func TestScan_SourceError(t *testing.T) {
 
 	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond) // allow async enrichment goroutines to complete
 
 	if len(store.alerts) != 0 {
 		t.Errorf("len(alerts) = %d, want 0", len(store.alerts))
@@ -180,13 +202,14 @@ func TestScan_StoreError(t *testing.T) {
 
 	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond)
 
 	// Both should be attempted even though store errors
 	if len(store.alerts) != 2 {
 		t.Errorf("len(alerts) = %d, want 2", len(store.alerts))
 	}
-	if len(enr.enriched) != 2 {
-		t.Errorf("len(enriched) = %d, want 2", len(enr.enriched))
+	if enr.enrichedCount() != 2 {
+		t.Errorf("len(enriched) = %d, want 2", enr.enrichedCount())
 	}
 }
 
@@ -203,12 +226,13 @@ func TestScan_EmptyCallsign(t *testing.T) {
 
 	m := New(source, store, enr, nil, time.Minute)
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond)
 
-	if len(enr.enriched) != 1 {
-		t.Errorf("len(enriched) = %d, want 1", len(enr.enriched))
+	if enr.enrichedCount() != 1 {
+		t.Errorf("len(enriched) = %d, want 1", enr.enrichedCount())
 	}
-	if len(enr.routes) != 0 {
-		t.Errorf("len(routes) = %d, want 0 for empty callsign", len(enr.routes))
+	if enr.routesCount() != 0 {
+		t.Errorf("len(routes) = %d, want 0 for empty callsign", enr.routesCount())
 	}
 }
 
@@ -227,12 +251,13 @@ func TestScan_DeduplicatesWithinCooldown(t *testing.T) {
 	m.scan(context.Background())
 	m.scan(context.Background())
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond) // allow async enrichment goroutines to complete
 
 	if len(store.alerts) != 1 {
 		t.Errorf("len(alerts) = %d, want 1 (duplicates should be suppressed)", len(store.alerts))
 	}
-	if len(enr.enriched) != 1 {
-		t.Errorf("len(enriched) = %d, want 1", len(enr.enriched))
+	if enr.enrichedCount() != 1 {
+		t.Errorf("len(enriched) = %d, want 1", enr.enrichedCount())
 	}
 }
 
@@ -288,13 +313,14 @@ func TestScan_NotificationError(t *testing.T) {
 
 	m := New(source, store, enr, notif, time.Minute)
 	m.scan(context.Background())
+	time.Sleep(200 * time.Millisecond)
 
 	// Alert should still be stored and enriched despite notification failure
 	if len(store.alerts) != 1 {
 		t.Errorf("len(alerts) = %d, want 1", len(store.alerts))
 	}
-	if len(enr.enriched) != 1 {
-		t.Errorf("len(enriched) = %d, want 1", len(enr.enriched))
+	if enr.enrichedCount() != 1 {
+		t.Errorf("len(enriched) = %d, want 1", enr.enrichedCount())
 	}
 }
 
