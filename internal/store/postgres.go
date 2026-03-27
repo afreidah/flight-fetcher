@@ -39,15 +39,21 @@ import (
 // TYPES
 // -------------------------------------------------------------------------
 
-// DefaultRouteTTL is the default time before cached routes are considered stale.
-const DefaultRouteTTL = 24 * time.Hour
+const (
+	// DefaultRouteTTL is the default time before cached routes are considered stale.
+	DefaultRouteTTL = 24 * time.Hour
+	// DefaultAircraftTTL is the default time before cached aircraft metadata
+	// is considered stale and re-enriched.
+	DefaultAircraftTTL = 7 * 24 * time.Hour
+)
 
 // PostgresStore manages aircraft metadata and sighting history in PostgreSQL.
 type PostgresStore struct {
-	pool     *pgxpool.Pool
-	queries  *db.Queries
-	routeTTL time.Duration
-	tracer   trace.Tracer
+	pool        *pgxpool.Pool
+	queries     *db.Queries
+	routeTTL    time.Duration
+	aircraftTTL time.Duration
+	tracer      trace.Tracer
 }
 
 // -------------------------------------------------------------------------
@@ -85,10 +91,11 @@ func NewPostgresStore(ctx context.Context, dsn string, routeTTL time.Duration) (
 		routeTTL = DefaultRouteTTL
 	}
 	return &PostgresStore{
-		pool:     pool,
-		queries:  db.New(pool),
-		routeTTL: routeTTL,
-		tracer:   otel.Tracer("flight-fetcher/postgres"),
+		pool:        pool,
+		queries:     db.New(pool),
+		routeTTL:    routeTTL,
+		aircraftTTL: DefaultAircraftTTL,
+		tracer:      otel.Tracer("flight-fetcher/postgres"),
 	}, nil
 }
 
@@ -144,10 +151,13 @@ func (p *PostgresStore) SaveAircraftMeta(ctx context.Context, info *aircraft.Inf
 }
 
 // GetAircraftMeta retrieves cached aircraft metadata by ICAO24. Returns nil
-// if the aircraft has not been enriched yet.
+// if the aircraft has not been enriched yet or the cached entry is stale.
 func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error) {
 	return traced(p, ctx, "GetAircraftMeta", func(ctx context.Context) (*aircraft.Info, error) {
-		row, err := p.queries.GetAircraftMeta(ctx, icao24)
+		row, err := p.queries.GetAircraftMeta(ctx, db.GetAircraftMetaParams{
+			Icao24:    icao24,
+			UpdatedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.aircraftTTL), Valid: true},
+		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}

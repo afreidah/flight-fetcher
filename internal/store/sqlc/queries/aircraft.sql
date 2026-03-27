@@ -14,4 +14,4 @@ ON CONFLICT (icao24) DO UPDATE SET
 -- name: GetAircraftMeta :one
 SELECT icao24, registration, manufacturer, type, operator, icao_type_code, registered_owners, image_url
 FROM aircraft_meta
-WHERE icao24 = $1;
+WHERE icao24 = $1 AND updated_at > $2;

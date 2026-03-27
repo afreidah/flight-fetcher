@@ -205,7 +205,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 	logger.EXPECT().
 		LogSighting(gomock.Any(), "abc123", gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil).
-		Times(2)
+		Times(1) // only once — second poll has same position, skipped
 	enricher.EXPECT().
 		Enrich(gomock.Any(), "abc123").
 		Return(true).
@@ -217,7 +217,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	pollAndDrain(p, context.Background())
-	// Second poll — enrichment should be skipped since already seen
+	// Second poll — enrichment and sighting skipped since already seen/unchanged
 	pollAndDrain(p, context.Background())
 }
 
@@ -284,4 +284,34 @@ func TestPoll_EmptyResponse(t *testing.T) {
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
 	pollAndDrain(p, context.Background())
+}
+
+// TestPositionChanged verifies sighting deduplication logic.
+func TestPositionChanged(t *testing.T) {
+	p := New(&Options{Interval: time.Minute, EvictInterval: time.Hour})
+
+	// First observation — always true
+	if !p.positionChanged("abc123", 34.09, -118.33) {
+		t.Error("first observation should return true")
+	}
+
+	// Same position — should return false
+	if p.positionChanged("abc123", 34.09, -118.33) {
+		t.Error("identical position should return false")
+	}
+
+	// Tiny move below threshold — should return false
+	if p.positionChanged("abc123", 34.09+0.001, -118.33) {
+		t.Error("sub-threshold move should return false")
+	}
+
+	// Significant move — should return true
+	if !p.positionChanged("abc123", 34.10, -118.33) {
+		t.Error("significant move should return true")
+	}
+
+	// Different aircraft — always true on first sight
+	if !p.positionChanged("def456", 35.0, -117.0) {
+		t.Error("new aircraft should return true")
+	}
 }

@@ -7,13 +7,20 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getAircraftMeta = `-- name: GetAircraftMeta :one
 SELECT icao24, registration, manufacturer, type, operator, icao_type_code, registered_owners, image_url
 FROM aircraft_meta
-WHERE icao24 = $1
+WHERE icao24 = $1 AND updated_at > $2
 `
+
+type GetAircraftMetaParams struct {
+	Icao24    string
+	UpdatedAt pgtype.Timestamptz
+}
 
 type GetAircraftMetaRow struct {
 	Icao24           string
@@ -26,8 +33,8 @@ type GetAircraftMetaRow struct {
 	ImageUrl         string
 }
 
-func (q *Queries) GetAircraftMeta(ctx context.Context, icao24 string) (GetAircraftMetaRow, error) {
-	row := q.db.QueryRow(ctx, getAircraftMeta, icao24)
+func (q *Queries) GetAircraftMeta(ctx context.Context, arg GetAircraftMetaParams) (GetAircraftMetaRow, error) {
+	row := q.db.QueryRow(ctx, getAircraftMeta, arg.Icao24, arg.UpdatedAt)
 	var i GetAircraftMetaRow
 	err := row.Scan(
 		&i.Icao24,
