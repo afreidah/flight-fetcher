@@ -55,11 +55,12 @@ func (mr *MockInterfaceMockRecorder) Enrich(ctx, icao24 any) *gomock.Call {
 }
 
 // EnrichRoute mocks base method.
-func (m *MockInterface) EnrichRoute(ctx context.Context, callsign string) bool {
+func (m *MockInterface) EnrichRoute(ctx context.Context, callsign string) (bool, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "EnrichRoute", ctx, callsign)
 	ret0, _ := ret[0].(bool)
-	return ret0
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
 }
 
 // EnrichRoute indicates an expected call of EnrichRoute.

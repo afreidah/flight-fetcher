@@ -65,8 +65,6 @@ func (c *Client) Lookup(ctx context.Context, icao24 string) (*aircraft.Info, err
 		return nil, err
 	}
 
-	imageURL := c.FetchImageURL(ctx, icao24)
-
 	return &aircraft.Info{
 		ICAO24:           icao24,
 		Registration:     resp.Registration,
@@ -75,7 +73,6 @@ func (c *Client) Lookup(ctx context.Context, icao24 string) (*aircraft.Info, err
 		OperatorFlagCode: resp.OperatorFlagCode,
 		ICAOTypeCode:     resp.ICAOTypeCode,
 		RegisteredOwners: resp.RegisteredOwners,
-		ImageURL:         imageURL,
 	}, nil
 }
 

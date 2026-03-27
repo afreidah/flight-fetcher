@@ -271,7 +271,7 @@ func (p *Poller) enrichWorker(ctx context.Context) {
 			}
 		}
 		if needRoute {
-			if p.opts.Enricher.EnrichRoute(ctx, req.callsign) {
+			if ok, found := p.opts.Enricher.EnrichRoute(ctx, req.callsign); ok && found {
 				p.mu.Lock()
 				p.seenRoutes[req.callsign] = true
 				p.mu.Unlock()
