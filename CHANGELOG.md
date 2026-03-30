@@ -3,6 +3,42 @@
 All notable changes to this project are documented in this file.
 
 
+## [0.9.23] - 2026-03-30
+
+### Added
+- Add dump1090/readsb local ADS-B receiver client
+- Add tests for LookupType, DescribeAircraftClass, LookupAirline, and flight list classification
+- Add type specs, airline details, logos, and classification in flight list
+- Add Telegram notifier and restructure notification config
+- Add pluggable notification system with Discord webhook support
+- Add tracing spans to all Postgres operations and fix observe shutdown
+- Add generic Lookup helper to reduce API client boilerplate
+- Add config validation tests for missing coverage branches
+- Add integration tests for Postgres and Redis store layer
+- Add Grafana dashboard and local observability stack
+- Add named enrichment sources and improve log visibility
+- Add OpenSky metadata as aircraft enrichment fallback
+
+### Fixed
+- Fix squawk detail image layout to match flight detail
+- Fix route seen-marking, remove sync image fetch, async squawk enrichment
+
+### Improved
+- update CHANGELOG.md for v0.9.4 (#142)
+
+### Other
+- Deduplicate sighting writes and add aircraft metadata TTL
+- Remove unfinished TFR code from dump1090 branch
+- Classify aircraft as military/LE/EMS and fix image rendering
+- Enrich aircraft with type code, owner, and photo from HexDB
+- Thread migration context, extract squawk constants, parse Retry-After
+- Deduplicate Do() metrics, remove hexdb type alias, normalize JSON casing
+- Clean up config, server Pinger, and ListenAndServe error handling
+- Unify duplicate enricher interfaces into enricher.Interface
+- Deduplicate enricher with generic lookup helper
+- Fill test coverage gaps and include store in codecov
+- Upload integration test coverage to codecov
+
 ## [0.9.4] - 2026-03-25
 
 ### Fixed
