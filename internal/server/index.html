@@ -388,6 +388,26 @@
       t += row("Vertical Rate", fmtFpm(s.vertical_rate));
       t += row("On Ground", s.on_ground);
       t += rowHTML("Squawk", squawkLabel(s.squawk));
+      var hasAntenna = s.category || s.emergency || s.geo_altitude != null ||
+        s.nav_altitude_mcp != null || s.nav_heading != null || (s.nav_modes && s.nav_modes.length) ||
+        s.registration || s.aircraft_type || s.description || s.is_military != null ||
+        s.seen_sec != null || s.rssi != null || s.message_count != null;
+      if (hasAntenna) {
+        t += section("Antenna (Live)");
+        if (s.geo_altitude != null) t += row("Geo Altitude", fmtFt(s.geo_altitude));
+        if (s.category) t += row("Category", categoryLabel(s.category));
+        if (s.emergency && s.emergency !== "none") t += rowHTML("Emergency", '<span class="squawk-emergency">' + esc(s.emergency.toUpperCase()) + '</span>');
+        if (s.nav_altitude_mcp != null) t += row("Autopilot Altitude", fmtFt(s.nav_altitude_mcp));
+        if (s.nav_heading != null) t += row("Autopilot Heading", fmt(s.nav_heading, "deg"));
+        if (s.nav_modes && s.nav_modes.length) t += row("Autopilot Modes", s.nav_modes.join(", "));
+        if (s.registration) t += row("Registration (local)", s.registration);
+        if (s.aircraft_type) t += row("Type (local)", s.aircraft_type);
+        if (s.description) t += row("Description (local)", s.description);
+        if (s.is_military) t += row("Military (local DB)", "yes");
+        if (s.message_count != null) t += row("Messages Heard", s.message_count.toLocaleString());
+        if (s.rssi != null) t += row("Signal (dBFS)", s.rssi.toFixed(1));
+        if (s.seen_sec != null) t += row("Last Heard", s.seen_sec.toFixed(1) + " s ago");
+      }
       if (data.route) {
         var r = data.route;
         t += section("Route");
@@ -556,6 +576,14 @@
     }
     function wakeLabel(wtc) {
       return {"L":"Light","M":"Medium","H":"Heavy","J":"Super"}[wtc] || wtc || "-";
+    }
+    function categoryLabel(c) {
+      var m = {
+        "A1":"Light","A2":"Small","A3":"Large","A4":"High Vortex","A5":"Heavy","A6":"High Performance","A7":"Rotorcraft",
+        "B1":"Glider","B2":"Lighter-than-air","B3":"Parachutist","B4":"Ultralight","B6":"UAV","B7":"Spacecraft",
+        "C1":"Surface Emergency Vehicle","C2":"Surface Service Vehicle","C3":"Fixed Obstacle"
+      };
+      return m[c] ? c + " - " + m[c] : c;
     }
     function fmt(v, unit) {
       return v != null && v !== 0 ? Math.round(v) + " " + unit : "-";
