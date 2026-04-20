@@ -166,6 +166,118 @@ func TestSetFlight_Overwrite(t *testing.T) {
 	}
 }
 
+// TestMarkHeard_AndHeardBy verifies that per-source liveness keys are set
+// with the given TTL and read back correctly for both present and absent
+// sources.
+func TestMarkHeard_AndHeardBy(t *testing.T) {
+	store := newTestRedisStore(t, time.Minute)
+	ctx := context.Background()
+
+	if err := store.MarkHeard(ctx, "antenna", "abc123", time.Minute); err != nil {
+		t.Fatalf("MarkHeard() error = %v", err)
+	}
+	if err := store.MarkHeard(ctx, "opensky", "abc123", time.Minute); err != nil {
+		t.Fatalf("MarkHeard() error = %v", err)
+	}
+	// Aircraft heard only by opensky:
+	if err := store.MarkHeard(ctx, "opensky", "def456", time.Minute); err != nil {
+		t.Fatalf("MarkHeard() error = %v", err)
+	}
+
+	// Both sources present for abc123.
+	heard, err := store.HeardBy(ctx, "abc123", []string{"antenna", "opensky"})
+	if err != nil {
+		t.Fatalf("HeardBy() error = %v", err)
+	}
+	if len(heard) != 2 || heard[0] != "antenna" || heard[1] != "opensky" {
+		t.Errorf("HeardBy(abc123) = %v, want [antenna opensky]", heard)
+	}
+
+	// Only opensky for def456.
+	heard, _ = store.HeardBy(ctx, "def456", []string{"antenna", "opensky"})
+	if len(heard) != 1 || heard[0] != "opensky" {
+		t.Errorf("HeardBy(def456) = %v, want [opensky]", heard)
+	}
+
+	// Unknown ICAO: empty result, no error.
+	heard, err = store.HeardBy(ctx, "ghi789", []string{"antenna", "opensky"})
+	if err != nil {
+		t.Fatalf("HeardBy() error = %v", err)
+	}
+	if len(heard) != 0 {
+		t.Errorf("HeardBy(ghi789) = %v, want empty", heard)
+	}
+
+	// Empty sources short-circuits.
+	heard, err = store.HeardBy(ctx, "abc123", nil)
+	if err != nil || heard != nil {
+		t.Errorf("HeardBy(nil sources) = %v, %v; want nil, nil", heard, err)
+	}
+}
+
+// TestMarkHeard_TTLExpires verifies that liveness keys expire according to
+// the TTL passed to MarkHeard so stale sources drop out of HeardBy results.
+func TestMarkHeard_TTLExpires(t *testing.T) {
+	store := newTestRedisStore(t, time.Minute)
+	ctx := context.Background()
+
+	if err := store.MarkHeard(ctx, "antenna", "abc123", 50*time.Millisecond); err != nil {
+		t.Fatalf("MarkHeard() error = %v", err)
+	}
+	// Immediately visible.
+	heard, _ := store.HeardBy(ctx, "abc123", []string{"antenna"})
+	if len(heard) != 1 {
+		t.Fatalf("immediately after MarkHeard, got %v, want [antenna]", heard)
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	heard, _ = store.HeardBy(ctx, "abc123", []string{"antenna"})
+	if len(heard) != 0 {
+		t.Errorf("after TTL expiry, HeardBy() = %v, want empty", heard)
+	}
+}
+
+// TestHeardByAll verifies the batched form returns a source map for every
+// aircraft with at least one active source, and omits aircraft with none.
+func TestHeardByAll(t *testing.T) {
+	store := newTestRedisStore(t, time.Minute)
+	ctx := context.Background()
+
+	_ = store.MarkHeard(ctx, "antenna", "aaa", time.Minute)
+	_ = store.MarkHeard(ctx, "opensky", "aaa", time.Minute)
+	_ = store.MarkHeard(ctx, "antenna", "bbb", time.Minute)
+	_ = store.MarkHeard(ctx, "opensky", "ccc", time.Minute)
+	// "ddd" has nothing.
+
+	got, err := store.HeardByAll(ctx, []string{"aaa", "bbb", "ccc", "ddd"}, []string{"antenna", "opensky"})
+	if err != nil {
+		t.Fatalf("HeardByAll() error = %v", err)
+	}
+	if len(got["aaa"]) != 2 {
+		t.Errorf("aaa heard_by = %v, want 2 sources", got["aaa"])
+	}
+	if len(got["bbb"]) != 1 || got["bbb"][0] != "antenna" {
+		t.Errorf("bbb heard_by = %v, want [antenna]", got["bbb"])
+	}
+	if len(got["ccc"]) != 1 || got["ccc"][0] != "opensky" {
+		t.Errorf("ccc heard_by = %v, want [opensky]", got["ccc"])
+	}
+	if _, present := got["ddd"]; present {
+		t.Errorf("ddd should be omitted from map, got %v", got["ddd"])
+	}
+
+	// Empty inputs short-circuit to empty map.
+	empty, err := store.HeardByAll(ctx, nil, []string{"antenna"})
+	if err != nil || len(empty) != 0 {
+		t.Errorf("HeardByAll(nil icaos) = %v, %v", empty, err)
+	}
+	empty, err = store.HeardByAll(ctx, []string{"aaa"}, nil)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("HeardByAll(nil sources) = %v, %v", empty, err)
+	}
+}
+
 // TestPing_Redis verifies that Ping succeeds on a healthy connection.
 func TestPing_Redis(t *testing.T) {
 	store := newTestRedisStore(t, time.Minute)
