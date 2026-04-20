@@ -9,7 +9,7 @@
 # Register at https://flightaware.com/aeroapi for FlightAware fallback (optional).
 # -------------------------------------------------------------------------------
 
-poll_interval      = "20s"
+poll_interval      = "20s"   # fallback for sources that don't set their own
 enrichment_refresh = "1h"
 
 location {
@@ -19,8 +19,9 @@ location {
 }
 
 opensky {
-  id     = "YOUR_CLIENT_ID"
-  secret = "YOUR_CLIENT_SECRET"
+  id            = "YOUR_CLIENT_ID"
+  secret        = "YOUR_CLIENT_SECRET"
+  poll_interval = "120s"   # optional; OpenSky is rate-limited, prefer slow polling
 }
 
 redis {
@@ -33,7 +34,7 @@ postgres {
 
 server {
   listen  = ":8080"
-  refresh = 5
+  refresh = 2   # dashboard poll cadence (seconds); set below your fastest source's poll_interval
 }
 
 airlabs {
@@ -63,12 +64,16 @@ notifications {
   # }
 }
 
-# Optional: automatic cleanup of old data
-# Optional: local ADS-B receiver (dump1090/readsb/dump1090-fa)
+# Optional: local ADS-B receiver (dump1090/readsb/dump1090-fa/PiAware).
+# When configured alongside opensky, BOTH sources run concurrently on
+# independent intervals and write to the same cache/store — last write wins.
+# PiAware serves aircraft.json at /skyaware/data/aircraft.json on port 80.
 # dump1090 {
-#   url = "http://piaware:8080"
+#   url           = "http://piaware.local/skyaware"
+#   poll_interval = "10s"   # optional; local antenna has no rate limit
 # }
 
+# Optional: automatic cleanup of old data
 retention {
   sightings_max_age = "720h"
   alerts_max_age    = "168h"

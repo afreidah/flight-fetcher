@@ -16,6 +16,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -92,12 +93,13 @@ func (a *Aircraft) ToStateVector() *opensky.StateVector {
 	}
 
 	sv := &opensky.StateVector{
-		ICAO24:    strings.ToLower(a.Hex),
-		Callsign:  strings.TrimSpace(a.Flight),
-		Latitude:  *a.Lat,
-		Longitude: *a.Lon,
-		OnGround:  a.OnGround,
-		Squawk:    a.Squawk,
+		ICAO24:        strings.ToLower(a.Hex),
+		Callsign:      strings.TrimSpace(a.Flight),
+		OriginCountry: aircraft.CountryFromICAO24(a.Hex),
+		Latitude:      *a.Lat,
+		Longitude:     *a.Lon,
+		OnGround:      a.OnGround,
+		Squawk:        a.Squawk,
 
 		Category:     a.Category,
 		Emergency:    a.Emergency,
