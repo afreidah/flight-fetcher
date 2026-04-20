@@ -31,6 +31,12 @@ import (
 // flightKeyPrefix is the Redis key prefix for flight state entries.
 const flightKeyPrefix = "flight:"
 
+// heardKeyPrefix is the Redis key prefix for per-source liveness markers.
+// Keys take the form heard:<source>:<icao24> and are set with a TTL tuned
+// to the writing source's poll interval so a key naturally expires if that
+// source stops hearing the aircraft.
+const heardKeyPrefix = "heard:"
+
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
@@ -137,6 +143,71 @@ func (r *RedisStore) GetFlight(ctx context.Context, icao24 string) (*opensky.Sta
 		return nil, err
 	}
 	return &sv, nil
+}
+
+// MarkHeard records that the named source just observed the given aircraft.
+// The key expires after ttl so liveness naturally decays when the source
+// stops hearing the aircraft.
+func (r *RedisStore) MarkHeard(ctx context.Context, source, icao24 string, ttl time.Duration) error {
+	key := heardKeyPrefix + source + ":" + icao24
+	return r.client.Set(ctx, key, 1, ttl).Err()
+}
+
+// HeardBy returns the subset of sources currently reporting the given
+// aircraft as live. Issues one pipelined EXISTS call per source so the
+// whole check is a single round trip regardless of source count.
+func (r *RedisStore) HeardBy(ctx context.Context, icao24 string, sources []string) ([]string, error) {
+	if len(sources) == 0 {
+		return nil, nil
+	}
+	pipe := r.client.Pipeline()
+	cmds := make([]*redis.IntCmd, len(sources))
+	for i, s := range sources {
+		cmds[i] = pipe.Exists(ctx, heardKeyPrefix+s+":"+icao24)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("heard-by pipeline: %w", err)
+	}
+	result := make([]string, 0, len(sources))
+	for i, cmd := range cmds {
+		if cmd.Val() > 0 {
+			result = append(result, sources[i])
+		}
+	}
+	return result, nil
+}
+
+// HeardByAll is the batched form of HeardBy for the list endpoint. Issues
+// len(icaos) * len(sources) EXISTS calls in a single pipelined round trip
+// and returns a map from icao24 to the list of sources currently hearing it.
+func (r *RedisStore) HeardByAll(ctx context.Context, icaos, sources []string) (map[string][]string, error) {
+	if len(icaos) == 0 || len(sources) == 0 {
+		return map[string][]string{}, nil
+	}
+	pipe := r.client.Pipeline()
+	cmds := make([][]*redis.IntCmd, len(icaos))
+	for i, icao := range icaos {
+		cmds[i] = make([]*redis.IntCmd, len(sources))
+		for j, s := range sources {
+			cmds[i][j] = pipe.Exists(ctx, heardKeyPrefix+s+":"+icao)
+		}
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("heard-by-all pipeline: %w", err)
+	}
+	out := make(map[string][]string, len(icaos))
+	for i, icao := range icaos {
+		var heard []string
+		for j, cmd := range cmds[i] {
+			if cmd.Val() > 0 {
+				heard = append(heard, sources[j])
+			}
+		}
+		if len(heard) > 0 {
+			out[icao] = heard
+		}
+	}
+	return out, nil
 }
 
 // Ping verifies the Redis connection is alive.

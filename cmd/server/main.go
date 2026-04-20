@@ -81,9 +81,22 @@ func main() {
 	oskyClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
 	hexdbClient := hexdb.NewClient()
 
-	redisTTL := cfg.Poll * 3
+	// Redis TTL must cover the slowest poller's cycle so aircraft don't
+	// disappear between polls. 3× the slowest interval gives two grace
+	// cycles before eviction.
+	slowest := firstNonZeroInterval(cfg.OpenSky.Interval, cfg.Poll)
+	if cfg.Dump1090 != nil {
+		dd := firstNonZeroInterval(cfg.Dump1090.Interval, cfg.Poll)
+		if dd > slowest {
+			slowest = dd
+		}
+	}
+	redisTTL := slowest * 3
 	redisStore := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, redisTTL)
 	defer redisStore.Close()
+	slog.InfoContext(ctx, "redis ttl computed from slowest poller",
+		slog.Duration("slowest_interval", slowest),
+		slog.Duration("redis_ttl", redisTTL))
 
 	if err := redisStore.Ping(ctx); err != nil {
 		slog.ErrorContext(ctx, "failed to connect to redis", slog.String("error", err.Error()))
@@ -137,17 +150,19 @@ func main() {
 	}
 	if cfg.Dump1090 != nil {
 		specs = append(specs, sourceSpec{
-			name:     "dump1090",
+			name:     "antenna",
 			source:   dump1090.NewClient(cfg.Dump1090.URL),
 			interval: firstNonZeroInterval(cfg.Dump1090.Interval, cfg.Poll),
 		})
-		slog.InfoContext(ctx, "dump1090 flight source enabled",
+		slog.InfoContext(ctx, "antenna (dump1090) flight source enabled",
 			slog.String("url", cfg.Dump1090.URL),
 			slog.Duration("interval", specs[len(specs)-1].interval))
 	}
 
 	pollers := make([]*poller.Poller, 0, len(specs))
+	sourceNames := make([]string, 0, len(specs))
 	for _, s := range specs {
+		sourceNames = append(sourceNames, s.name)
 		pollers = append(pollers, poller.New(&poller.Options{
 			Name:     s.name,
 			Source:   s.source,
@@ -169,6 +184,8 @@ func main() {
 	if cfg.Server != nil && cfg.Server.Listen != "" {
 		srv := server.New(&server.Options{
 			Flights:    redisStore,
+			Heard:      redisStore,
+			Sources:    sourceNames,
 			Aircraft:   pgStore,
 			Routes:     pgStore,
 			Alerts:     pgStore,

@@ -88,12 +88,19 @@
     .class-military { background: #5b7a3a; }
     .class-law_enforcement { background: #3a5a8c; }
     .class-emergency { background: #c44; }
+    .source-toggle { margin-left: 1rem; display: inline-flex; border: 1px solid #d0b8c8; border-radius: 4px; overflow: hidden; vertical-align: middle; }
+    .source-toggle button { background: transparent; border: none; padding: 4px 10px; font-size: 0.8rem; color: #6b4c5a; cursor: pointer; font-family: inherit; }
+    .source-toggle button.active { background: #e8879a; color: #fff; }
   </style>
 </head>
 <body>
   <header>
     Flight Fetcher<span class="version">{{VERSION}}</span>
     <span class="status" id="status">Loading...</span>
+    <span class="source-toggle" id="source-toggle" style="display:none">
+      <button type="button" data-filter="all" class="active" onclick="setSourceFilter('all')">All Aircraft</button>
+      <button type="button" data-filter="antenna" onclick="setSourceFilter('antenna')">Antenna Live</button>
+    </span>
   </header>
   <div class="main">
     <div class="left">
@@ -121,6 +128,38 @@
     var map = null;
     var markers = {};
     var selectedMarker = null;
+    var sourceFilter = localStorage.getItem("sourceFilter") || "all";
+
+    // applyFilter returns the subset of flights matching the current toggle.
+    // "antenna" shows only aircraft whose heard_by list includes "antenna";
+    // "all" returns the input unchanged.
+    function applyFilter(flights) {
+      if (sourceFilter !== "antenna") return flights;
+      return flights.filter(function(f) {
+        return (f.heard_by || []).indexOf("antenna") !== -1;
+      });
+    }
+
+    // setSourceFilter updates the toggle state, persists it, and re-renders
+    // the list + map without refetching.
+    function setSourceFilter(mode) {
+      sourceFilter = mode;
+      localStorage.setItem("sourceFilter", mode);
+      document.querySelectorAll("#source-toggle button").forEach(function(b) {
+        b.classList.toggle("active", b.dataset.filter === mode);
+      });
+      renderFlightList(cachedFlights);
+    }
+
+    // maybeShowToggle reveals the toggle only when the server advertises an
+    // antenna source via any flight's heard_by — no point showing it in a
+    // single-source deployment.
+    function maybeShowToggle(flights) {
+      var hasAntenna = flights.some(function(f) {
+        return (f.heard_by || []).indexOf("antenna") !== -1;
+      });
+      if (hasAntenna) document.getElementById("source-toggle").style.display = "";
+    }
 
     // Military ICAO24 hex ranges from tar1090-db
     var milRanges = [
@@ -272,54 +311,65 @@
         cachedFlights = flights;
         flightMap = {};
         flights.forEach(function(f) { flightMap[f.icao24] = f; });
-        document.getElementById("status").textContent = flights.length + " aircraft in range";
-
-        var el = document.getElementById("flights");
-        flights = sortFlights(flights);
-
-        var current = {};
-        flights.forEach(function(f) { current[f.icao24] = f; });
-
-        // Remove rows for aircraft that left
-        var existing = el.querySelectorAll(".row[data-icao]");
-        existing.forEach(function(row) {
-          if (!current[row.dataset.icao]) row.remove();
-        });
-
-        // Update existing or add new
-        flights.forEach(function(f) {
-          var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
-          if (row) {
-            var header = row.querySelector(".row-header");
-            if (header) header.innerHTML = buildHeader(f);
-          } else {
-            row = document.createElement("div");
-            row.className = "row";
-            row.dataset.icao = f.icao24;
-            row.innerHTML =
-              '<div class="row-header" onclick="selectFlight(\'' + esc(f.icao24) + '\')">' +
-                buildHeader(f) +
-              '</div>';
-            el.appendChild(row);
-          }
-          if (selected === f.icao24) {
-            row.classList.add("selected");
-          } else {
-            row.classList.remove("selected");
-          }
-        });
-
-        // Re-sort
-        flights.forEach(function(f) {
-          var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
-          if (row) el.appendChild(row);
-        });
-
-        // Update map markers
-        updateMarkers(flights);
+        maybeShowToggle(flights);
+        renderFlightList(flights);
       } catch (e) {
         document.getElementById("status").textContent = "Error loading flights";
       }
+    }
+
+    // renderFlightList applies the current source filter, updates the status
+    // bar, and renders the filtered list + map markers. Called on every poll
+    // and when the user flips the source toggle.
+    function renderFlightList(allFlights) {
+      var filtered = applyFilter(allFlights);
+      var status = sourceFilter === "antenna"
+        ? filtered.length + " aircraft (antenna only)"
+        : filtered.length + " aircraft in range";
+      document.getElementById("status").textContent = status;
+
+      var el = document.getElementById("flights");
+      var sorted = sortFlights(filtered);
+
+      var current = {};
+      sorted.forEach(function(f) { current[f.icao24] = f; });
+
+      // Remove rows for aircraft no longer in the filtered set
+      var existing = el.querySelectorAll(".row[data-icao]");
+      existing.forEach(function(row) {
+        if (!current[row.dataset.icao]) row.remove();
+      });
+
+      // Update existing or add new
+      sorted.forEach(function(f) {
+        var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
+        if (row) {
+          var header = row.querySelector(".row-header");
+          if (header) header.innerHTML = buildHeader(f);
+        } else {
+          row = document.createElement("div");
+          row.className = "row";
+          row.dataset.icao = f.icao24;
+          row.innerHTML =
+            '<div class="row-header" onclick="selectFlight(\'' + esc(f.icao24) + '\')">' +
+              buildHeader(f) +
+            '</div>';
+          el.appendChild(row);
+        }
+        if (selected === f.icao24) {
+          row.classList.add("selected");
+        } else {
+          row.classList.remove("selected");
+        }
+      });
+
+      // Re-sort DOM
+      sorted.forEach(function(f) {
+        var row = el.querySelector('.row[data-icao="' + f.icao24 + '"]');
+        if (row) el.appendChild(row);
+      });
+
+      updateMarkers(sorted);
     }
 
     function selectFlight(icao24) {
@@ -617,6 +667,10 @@
     }
 
     initMap();
+    // Sync toggle UI with persisted filter state before first render.
+    document.querySelectorAll("#source-toggle button").forEach(function(b) {
+      b.classList.toggle("active", b.dataset.filter === sourceFilter);
+    });
     var refreshSec = {{REFRESH}};
     loadFlights();
     loadSquawkAlerts();

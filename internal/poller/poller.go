@@ -43,9 +43,12 @@ type FlightSource interface {
 	GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error)
 }
 
-// FlightCache stores current flight state for fast lookup.
+// FlightCache stores current flight state for fast lookup and records
+// per-source liveness so readers can tell which source is currently
+// hearing each aircraft.
 type FlightCache interface {
 	SetFlight(ctx context.Context, sv *opensky.StateVector) error
+	MarkHeard(ctx context.Context, source, icao24 string, ttl time.Duration) error
 }
 
 // SightingLogger records historical aircraft sightings.
@@ -208,6 +211,12 @@ func (p *Poller) poll(ctx context.Context) {
 
 		if err := p.opts.Cache.SetFlight(ctx, sv); err != nil {
 			slog.WarnContext(ctx, "cache write failed",
+				slog.String("source", p.opts.Name),
+				slog.String("icao24", sv.ICAO24),
+				slog.String("error", err.Error()))
+		}
+		if err := p.opts.Cache.MarkHeard(ctx, p.opts.Name, sv.ICAO24, p.opts.Interval*3); err != nil {
+			slog.WarnContext(ctx, "heard marker write failed",
 				slog.String("source", p.opts.Name),
 				slog.String("icao24", sv.ICAO24),
 				slog.String("error", err.Error()))

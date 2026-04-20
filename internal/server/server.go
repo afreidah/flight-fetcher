@@ -57,6 +57,14 @@ type ImageFetcher interface {
 	FetchImageURL(ctx context.Context, icao24 string) string
 }
 
+// HeardChecker reports which sources have observed each aircraft recently.
+// The list of candidate sources is passed in so the same check can be used
+// for any set of pollers.
+type HeardChecker interface {
+	HeardBy(ctx context.Context, icao24 string, sources []string) ([]string, error)
+	HeardByAll(ctx context.Context, icaos, sources []string) (map[string][]string, error)
+}
+
 // Pinger checks if a backend dependency is reachable.
 type Pinger interface {
 	Ping(ctx context.Context) error
@@ -79,6 +87,8 @@ type Options struct {
 	Routes     RouteReader
 	Alerts     SquawkAlertReader
 	Images     ImageFetcher
+	Heard      HeardChecker
+	Sources    []string
 	Pingers    []HealthPinger
 	Version    string
 	RefreshSec int
@@ -99,6 +109,7 @@ type flightDetail struct {
 	Classification string                `json:"classification,omitempty"`
 	TypeSpec       *aircraft.TypeSpec    `json:"type_spec,omitempty"`
 	Airline        *aircraft.AirlineInfo `json:"airline,omitempty"`
+	HeardBy        []string              `json:"heard_by,omitempty"`
 }
 
 // -------------------------------------------------------------------------
@@ -169,8 +180,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 // flightListEntry wraps a state vector with classification for the list view.
 type flightListEntry struct {
 	opensky.StateVector
-	Classification string `json:"classification,omitempty"`
-	OperatorCode   string `json:"operator_code,omitempty"`
+	Classification string   `json:"classification,omitempty"`
+	OperatorCode   string   `json:"operator_code,omitempty"`
+	HeardBy        []string `json:"heard_by,omitempty"`
 }
 
 // handleListFlights returns all current flights as JSON. Returns an empty
@@ -184,6 +196,21 @@ func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
 		writeJSON(r.Context(), w, []flightListEntry{})
 		return
 	}
+	var heardMap map[string][]string
+	if s.opts.Heard != nil && len(s.opts.Sources) > 0 && len(flights) > 0 {
+		icaos := make([]string, len(flights))
+		for i := range flights {
+			icaos[i] = flights[i].ICAO24
+		}
+		m, err := s.opts.Heard.HeardByAll(r.Context(), icaos, s.opts.Sources)
+		if err != nil {
+			slog.WarnContext(r.Context(), "api: heard-by lookup failed",
+				slog.String("error", err.Error()))
+		} else {
+			heardMap = m
+		}
+	}
+
 	entries := make([]flightListEntry, len(flights))
 	for i := range flights {
 		f := &flights[i]
@@ -197,6 +224,7 @@ func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
 			StateVector:    *f,
 			Classification: aircraft.Classify(f.ICAO24, owners),
 			OperatorCode:   operator,
+			HeardBy:        heardMap[f.ICAO24],
 		}
 	}
 	writeJSON(r.Context(), w, entries)
@@ -251,6 +279,17 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 				slog.String("error", err.Error()))
 		}
 		detail.Route = route
+	}
+
+	if s.opts.Heard != nil && len(s.opts.Sources) > 0 {
+		heard, err := s.opts.Heard.HeardBy(r.Context(), icao24, s.opts.Sources)
+		if err != nil {
+			slog.WarnContext(r.Context(), "api: heard-by lookup failed",
+				slog.String("icao24", icao24),
+				slog.String("error", err.Error()))
+		} else {
+			detail.HeardBy = heard
+		}
 	}
 
 	writeJSON(r.Context(), w, detail)

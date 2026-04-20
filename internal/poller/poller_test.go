@@ -47,6 +47,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -90,6 +91,7 @@ func TestPoll_SourceError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -108,6 +110,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -145,6 +148,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -182,6 +186,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -226,6 +231,7 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -274,6 +280,7 @@ func TestPoll_EmptyResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
