@@ -128,7 +128,8 @@ func (m *Monitor) scan(ctx context.Context) {
 	}
 
 	count := 0
-	for _, sv := range resp.States {
+	for i := range resp.States {
+		sv := &resp.States[i]
 		if !isEmergencySquawk(sv.Squawk) {
 			continue
 		}

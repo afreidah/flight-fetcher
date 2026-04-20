@@ -16,6 +16,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/geo"
@@ -92,12 +93,20 @@ func (a *Aircraft) ToStateVector() *opensky.StateVector {
 	}
 
 	sv := &opensky.StateVector{
-		ICAO24:    strings.ToLower(a.Hex),
-		Callsign:  strings.TrimSpace(a.Flight),
-		Latitude:  *a.Lat,
-		Longitude: *a.Lon,
-		OnGround:  a.OnGround,
-		Squawk:    a.Squawk,
+		ICAO24:        strings.ToLower(a.Hex),
+		Callsign:      strings.TrimSpace(a.Flight),
+		OriginCountry: aircraft.CountryFromICAO24(a.Hex),
+		Latitude:      *a.Lat,
+		Longitude:     *a.Lon,
+		OnGround:      a.OnGround,
+		Squawk:        a.Squawk,
+
+		Category:     a.Category,
+		Emergency:    a.Emergency,
+		NavModes:     a.NavModes,
+		Registration: strings.TrimSpace(a.Registration),
+		AircraftType: strings.TrimSpace(a.AircraftType),
+		Description:  strings.TrimSpace(a.Description),
 	}
 
 	if a.AltBaro != nil {
@@ -111,6 +120,34 @@ func (a *Aircraft) ToStateVector() *opensky.StateVector {
 	}
 	if a.BaroRate != nil {
 		sv.VerticalRate = *a.BaroRate * 0.00508 // ft/min to m/s
+	}
+	if a.AltGeom != nil {
+		v := *a.AltGeom * 0.3048
+		sv.GeoAltitude = &v
+	}
+	if a.NavAltitudeMCP != nil {
+		v := *a.NavAltitudeMCP * 0.3048
+		sv.NavAltitudeMCP = &v
+	}
+	if a.NavHeading != nil {
+		v := *a.NavHeading
+		sv.NavHeading = &v
+	}
+	if a.Seen != nil {
+		v := *a.Seen
+		sv.SeenSec = &v
+	}
+	if a.RSSI != nil {
+		v := *a.RSSI
+		sv.RSSI = &v
+	}
+	if a.Messages != 0 {
+		v := a.Messages
+		sv.MessageCount = &v
+	}
+	if a.DBFlags != nil {
+		mil := a.IsMilitary()
+		sv.IsMilitary = &mil
 	}
 
 	return sv

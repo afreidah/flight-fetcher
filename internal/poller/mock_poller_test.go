@@ -12,6 +12,7 @@ package poller
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	opensky "github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	geo "github.com/afreidah/flight-fetcher/internal/geo"
@@ -79,6 +80,20 @@ func NewMockFlightCache(ctrl *gomock.Controller) *MockFlightCache {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockFlightCache) EXPECT() *MockFlightCacheMockRecorder {
 	return m.recorder
+}
+
+// MarkHeard mocks base method.
+func (m *MockFlightCache) MarkHeard(ctx context.Context, source, icao24 string, ttl time.Duration) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkHeard", ctx, source, icao24, ttl)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkHeard indicates an expected call of MarkHeard.
+func (mr *MockFlightCacheMockRecorder) MarkHeard(ctx, source, icao24, ttl any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkHeard", reflect.TypeOf((*MockFlightCache)(nil).MarkHeard), ctx, source, icao24, ttl)
 }
 
 // SetFlight mocks base method.

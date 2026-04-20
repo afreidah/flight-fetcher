@@ -47,6 +47,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -81,7 +82,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 		Return(true, true).
 		Times(1)
 
-	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: radiusKm, Interval: time.Minute, EvictInterval: time.Hour})
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: radiusKm, Interval: time.Minute, Dedup: NewDedupState(time.Hour)})
 	pollAndDrain(p, context.Background())
 }
 
@@ -90,6 +91,7 @@ func TestPoll_SourceError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -99,7 +101,7 @@ func TestPoll_SourceError(t *testing.T) {
 		GetStates(gomock.Any(), gomock.Any()).
 		Return(nil, errors.New("api down"))
 
-	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, Dedup: NewDedupState(time.Hour)})
 	pollAndDrain(p, context.Background())
 }
 
@@ -108,6 +110,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -136,7 +139,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 		EnrichRoute(gomock.Any(), gomock.Any()).
 		Return(true, true)
 
-	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, Dedup: NewDedupState(time.Hour)})
 	pollAndDrain(p, context.Background())
 }
 
@@ -145,6 +148,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -173,7 +177,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 		EnrichRoute(gomock.Any(), gomock.Any()).
 		Return(true, true)
 
-	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, Dedup: NewDedupState(time.Hour)})
 	pollAndDrain(p, context.Background())
 }
 
@@ -182,6 +186,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -215,7 +220,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 		Return(true, true).
 		Times(1)
 
-	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, Dedup: NewDedupState(time.Hour)})
 	pollAndDrain(p, context.Background())
 	// Second poll — enrichment and sighting skipped since already seen/unchanged
 	pollAndDrain(p, context.Background())
@@ -226,6 +231,7 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -262,9 +268,10 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 		Times(2)
 
 	// Use nanosecond eviction so it triggers on every poll after the first
-	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Nanosecond})
+	dedup := NewDedupState(time.Nanosecond)
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, Dedup: dedup})
 	pollAndDrain(p, context.Background())
-	p.lastEvict = time.Time{} // force eviction on next poll
+	dedup.lastEvict = time.Time{} // force eviction on next poll
 	pollAndDrain(p, context.Background())
 }
 
@@ -273,6 +280,7 @@ func TestPoll_EmptyResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	source := NewMockFlightSource(ctrl)
 	cache := NewMockFlightCache(ctrl)
+	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMockSightingLogger(ctrl)
 	enricher := NewMockInterface(ctrl)
 
@@ -282,36 +290,36 @@ func TestPoll_EmptyResponse(t *testing.T) {
 		GetStates(gomock.Any(), gomock.Any()).
 		Return(&opensky.StatesResponse{Time: 1234, States: nil}, nil)
 
-	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, EvictInterval: time.Hour})
+	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, Dedup: NewDedupState(time.Hour)})
 	pollAndDrain(p, context.Background())
 }
 
 // TestPositionChanged verifies sighting deduplication logic.
 func TestPositionChanged(t *testing.T) {
-	p := New(&Options{Interval: time.Minute, EvictInterval: time.Hour})
+	d := NewDedupState(time.Hour)
 
 	// First observation — always true
-	if !p.positionChanged("abc123", 34.09, -118.33) {
+	if !d.PositionChanged("abc123", 34.09, -118.33) {
 		t.Error("first observation should return true")
 	}
 
 	// Same position — should return false
-	if p.positionChanged("abc123", 34.09, -118.33) {
+	if d.PositionChanged("abc123", 34.09, -118.33) {
 		t.Error("identical position should return false")
 	}
 
 	// Tiny move below threshold — should return false
-	if p.positionChanged("abc123", 34.09+0.001, -118.33) {
+	if d.PositionChanged("abc123", 34.09+0.001, -118.33) {
 		t.Error("sub-threshold move should return false")
 	}
 
 	// Significant move — should return true
-	if !p.positionChanged("abc123", 34.10, -118.33) {
+	if !d.PositionChanged("abc123", 34.10, -118.33) {
 		t.Error("significant move should return true")
 	}
 
 	// Different aircraft — always true on first sight
-	if !p.positionChanged("def456", 35.0, -117.0) {
+	if !d.PositionChanged("def456", 35.0, -117.0) {
 		t.Error("new aircraft should return true")
 	}
 }

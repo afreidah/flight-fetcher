@@ -604,6 +604,193 @@ postgres { dsn = "postgres://localhost/test" }
 	}
 }
 
+// TestLoad_PerSourcePollInterval verifies that opensky.poll_interval and
+// dump1090.poll_interval are parsed and surface on the typed config so
+// main.go can pick them over the top-level fallback.
+func TestLoad_PerSourcePollInterval(t *testing.T) {
+	content := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+opensky {
+  id            = "test-client"
+  secret        = "test-secret"
+  poll_interval = "120s"
+}
+
+dump1090 {
+  url           = "http://piaware.local/skyaware"
+  poll_interval = "5s"
+}
+
+poll_interval = "30s"
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.OpenSky.Interval != 120*time.Second {
+		t.Errorf("OpenSky.Interval = %v, want 120s", cfg.OpenSky.Interval)
+	}
+	if cfg.Dump1090 == nil {
+		t.Fatal("Dump1090 should be set")
+	}
+	if cfg.Dump1090.Interval != 5*time.Second {
+		t.Errorf("Dump1090.Interval = %v, want 5s", cfg.Dump1090.Interval)
+	}
+	if cfg.Dump1090.URL != "http://piaware.local/skyaware" {
+		t.Errorf("Dump1090.URL = %q", cfg.Dump1090.URL)
+	}
+	if cfg.Poll != 30*time.Second {
+		t.Errorf("Poll = %v, want 30s", cfg.Poll)
+	}
+}
+
+// TestLoad_PerSourcePollInterval_ZeroWhenUnset verifies that omitted
+// per-source poll_intervals leave the typed Interval field as zero so
+// callers know to fall back to the top-level default.
+func TestLoad_PerSourcePollInterval_ZeroWhenUnset(t *testing.T) {
+	content := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+opensky {
+  id     = "test-client"
+  secret = "test-secret"
+}
+
+dump1090 {
+  url = "http://piaware.local/skyaware"
+}
+
+poll_interval = "30s"
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+`
+	path := writeTemp(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.OpenSky.Interval != 0 {
+		t.Errorf("OpenSky.Interval = %v, want 0", cfg.OpenSky.Interval)
+	}
+	if cfg.Dump1090.Interval != 0 {
+		t.Errorf("Dump1090.Interval = %v, want 0", cfg.Dump1090.Interval)
+	}
+}
+
+// TestLoad_PerSourcePollInterval_Validation rejects invalid durations and
+// enforces each source's minimum cadence.
+func TestLoad_PerSourcePollInterval_Validation(t *testing.T) {
+	base := `
+location {
+  lat       = 34.0928
+  lon       = -118.3287
+  radius_km = 50.0
+}
+
+redis {
+  addr = "localhost:6379"
+}
+
+postgres {
+  dsn = "postgres://user:pass@localhost:5432/testdb?sslmode=disable"
+}
+
+poll_interval = "30s"
+`
+	tests := []struct {
+		name    string
+		extra   string
+		wantErr string
+	}{
+		{
+			name: "opensky interval below 10s floor",
+			extra: `
+opensky {
+  id            = "x"
+  secret        = "y"
+  poll_interval = "2s"
+}
+`,
+			wantErr: "opensky.poll_interval must be at least 10s",
+		},
+		{
+			name: "opensky interval malformed",
+			extra: `
+opensky {
+  id            = "x"
+  secret        = "y"
+  poll_interval = "notaduration"
+}
+`,
+			wantErr: "opensky.poll_interval",
+		},
+		{
+			name: "dump1090 interval below 1s floor",
+			extra: `
+opensky {
+  id     = "x"
+  secret = "y"
+}
+dump1090 {
+  url           = "http://pi/skyaware"
+  poll_interval = "100ms"
+}
+`,
+			wantErr: "dump1090.poll_interval must be at least 1s",
+		},
+		{
+			name: "dump1090 interval malformed",
+			extra: `
+opensky {
+  id     = "x"
+  secret = "y"
+}
+dump1090 {
+  url           = "http://pi/skyaware"
+  poll_interval = "whenever"
+}
+`,
+			wantErr: "dump1090.poll_interval",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTemp(t, base+tt.extra)
+			_, err := Load(path)
+			if err == nil {
+				t.Fatalf("Load() error = nil, want %q", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Load() error = %q, want containing %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
 // writeTemp creates a temporary HCL file and returns its path.
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()

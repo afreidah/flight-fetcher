@@ -20,6 +20,11 @@ import (
 // -------------------------------------------------------------------------
 
 // StateVector represents a single aircraft state from the OpenSky API.
+//
+// Fields below the base set are populated by richer sources (notably the
+// local dump1090/PiAware feed) and omitted when serializing zero values so
+// OpenSky-sourced aircraft stay compact. All antenna-only fields are
+// pointers: nil means "not provided by this source".
 type StateVector struct {
 	ICAO24        string  `json:"icao24"`
 	Callsign      string  `json:"callsign"`
@@ -32,6 +37,21 @@ type StateVector struct {
 	VerticalRate  float64 `json:"vertical_rate"`
 	OnGround      bool    `json:"on_ground"`
 	Squawk        string  `json:"squawk"`
+
+	// Antenna-enriched fields (nil/empty when source is OpenSky).
+	GeoAltitude    *float64 `json:"geo_altitude,omitempty"`     // meters
+	Category       string   `json:"category,omitempty"`         // A0-D7 emitter class
+	Emergency      string   `json:"emergency,omitempty"`        // none|general|lifeguard|minfuel|nordo|unlawful|downed
+	NavAltitudeMCP *float64 `json:"nav_altitude_mcp,omitempty"` // selected altitude, meters
+	NavHeading     *float64 `json:"nav_heading,omitempty"`      // selected heading, degrees
+	NavModes       []string `json:"nav_modes,omitempty"`        // autopilot, vnav, althold, approach, lnav, tcas
+	Registration   string   `json:"registration,omitempty"`     // local DB
+	AircraftType   string   `json:"aircraft_type,omitempty"`    // local DB type code
+	Description    string   `json:"description,omitempty"`      // local DB long type name
+	IsMilitary     *bool    `json:"is_military,omitempty"`      // local DB dbFlags bit 0
+	SeenSec        *float64 `json:"seen_sec,omitempty"`         // seconds since last message
+	RSSI           *float64 `json:"rssi,omitempty"`             // signal power, dBFS
+	MessageCount   *int64   `json:"message_count,omitempty"`    // cumulative Mode-S messages heard
 }
 
 // stateVectorMinFields is the minimum number of elements in a raw OpenSky

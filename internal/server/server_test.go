@@ -89,6 +89,38 @@ func (s *stubImageFetcher) FetchImageURL(_ context.Context, _ string) string {
 	return s.url
 }
 
+// stubHeardChecker is a minimal HeardChecker for testing. When heardMap is
+// set, HeardByAll returns it; HeardBy returns the entry for icao24 filtered
+// to the requested sources. err short-circuits both methods.
+type stubHeardChecker struct {
+	heardMap map[string][]string
+	err      error
+}
+
+func (s *stubHeardChecker) HeardBy(_ context.Context, icao24 string, sources []string) ([]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	have := s.heardMap[icao24]
+	out := make([]string, 0, len(sources))
+	for _, want := range sources {
+		for _, got := range have {
+			if got == want {
+				out = append(out, want)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *stubHeardChecker) HeardByAll(_ context.Context, _, _ []string) (map[string][]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.heardMap, nil
+}
+
 // stubPinger is a minimal HealthPinger for testing.
 type stubPinger struct {
 	err error
@@ -654,6 +686,117 @@ func TestHandleHealthz_Unhealthy(t *testing.T) {
 	}
 	if got.Status != "unhealthy" {
 		t.Errorf("status = %q, want %q", got.Status, "unhealthy")
+	}
+}
+
+// TestHandleListFlights_HeardBy verifies that per-aircraft heard_by arrays
+// are attached when the server has a HeardChecker and Sources configured.
+func TestHandleListFlights_HeardBy(t *testing.T) {
+	flights := []opensky.StateVector{
+		{ICAO24: "abc123", Callsign: "UAL123"},
+		{ICAO24: "def456", Callsign: "DAL456"},
+		{ICAO24: "ghi789", Callsign: "SWA789"},
+	}
+	heard := &stubHeardChecker{heardMap: map[string][]string{
+		"abc123": {"antenna", "opensky"},
+		"def456": {"antenna"},
+		// ghi789: no sources hearing it (e.g. stale).
+	}}
+	srv := New(&Options{
+		Flights:  &stubFlightLister{flights: flights},
+		Aircraft: &stubMetaReader{},
+		Heard:    heard,
+		Sources:  []string{"antenna", "opensky"},
+		Version:  "test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/flights", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	// Decode into map[string]any because StateVector has a custom
+	// UnmarshalJSON that shadows the struct unmarshal via embedding.
+	var got []map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("entries = %d, want 3", len(got))
+	}
+	byICAO := map[string][]any{}
+	for _, e := range got {
+		icao, _ := e["icao24"].(string)
+		hb, _ := e["heard_by"].([]any)
+		byICAO[icao] = hb
+	}
+	if len(byICAO["abc123"]) != 2 {
+		t.Errorf("abc123 heard_by = %v, want 2 sources", byICAO["abc123"])
+	}
+	if len(byICAO["def456"]) != 1 || byICAO["def456"][0] != "antenna" {
+		t.Errorf("def456 heard_by = %v, want [antenna]", byICAO["def456"])
+	}
+	if _, present := got[2]["heard_by"]; present {
+		t.Errorf("ghi789 heard_by should be omitted (omitempty), got %v", got[2]["heard_by"])
+	}
+}
+
+// TestHandleListFlights_HeardByError verifies that a HeardChecker error is
+// logged but does not fail the request — the list still returns without
+// heard_by populated.
+func TestHandleListFlights_HeardByError(t *testing.T) {
+	flights := []opensky.StateVector{{ICAO24: "abc123"}}
+	srv := New(&Options{
+		Flights:  &stubFlightLister{flights: flights},
+		Aircraft: &stubMetaReader{},
+		Heard:    &stubHeardChecker{err: errors.New("redis down")},
+		Sources:  []string{"antenna", "opensky"},
+		Version:  "test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/flights", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 despite heard-by error", w.Code)
+	}
+	var got []map[string]any
+	_ = json.NewDecoder(w.Body).Decode(&got)
+	if len(got) != 1 {
+		t.Fatalf("entries = %d, want 1", len(got))
+	}
+	if _, present := got[0]["heard_by"]; present {
+		t.Errorf("heard_by should be omitted on HeardBy error, got %v", got[0]["heard_by"])
+	}
+}
+
+// TestHandleGetFlight_HeardBy verifies the detail endpoint attaches
+// heard_by when a HeardChecker is configured.
+func TestHandleGetFlight_HeardBy(t *testing.T) {
+	srv := New(&Options{
+		Flights: &stubFlightLister{flight: &opensky.StateVector{ICAO24: "abc123"}},
+		Aircraft: &stubMetaReader{},
+		Heard:    &stubHeardChecker{heardMap: map[string][]string{"abc123": {"antenna"}}},
+		Sources:  []string{"antenna", "opensky"},
+		Version:  "test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/flights/abc123", nil)
+	w := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	var got flightDetail
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(got.HeardBy) != 1 || got.HeardBy[0] != "antenna" {
+		t.Errorf("HeardBy = %v, want [antenna]", got.HeardBy)
 	}
 }
 
