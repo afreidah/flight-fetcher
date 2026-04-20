@@ -1,6 +1,6 @@
 module github.com/afreidah/flight-fetcher
 
-go 1.26.1
+go 1.26.2
 
 require (
 	github.com/hashicorp/hcl/v2 v2.24.0
@@ -9,6 +9,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/extra/redisotel/v9 v9.18.0
 	github.com/redis/go-redis/v9 v9.18.0
+	github.com/testcontainers/testcontainers-go v0.41.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.41.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.41.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
@@ -84,7 +85,6 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.2 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
-	github.com/testcontainers/testcontainers-go v0.41.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
