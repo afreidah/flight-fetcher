@@ -3,17 +3,26 @@
 #
 # Project: Flight Fetcher / Author: Alex Freidah
 #
-# Multi-stage build producing a minimal Alpine image with the flight-fetcher
-# binary. Configuration is mounted at runtime by Nomad.
+# Multi-stage cross-compiled build. The build stage pins itself to the host
+# architecture via --platform=$BUILDPLATFORM and uses Go's native cross-
+# compiler (GOOS/GOARCH from $TARGETOS/$TARGETARCH) to produce the binary
+# for the target platform. This avoids QEMU emulation for the compile step,
+# dropping arm64 push time from ~12min to ~45s on an amd64 host.
+#
+# Configuration is mounted at runtime by Nomad.
 # -------------------------------------------------------------------------------
 
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 ARG VERSION=dev
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${VERSION}" -o /flight-fetcher ./cmd/server
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -ldflags="-s -w -X main.Version=${VERSION}" -o /flight-fetcher ./cmd/server
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates && \
