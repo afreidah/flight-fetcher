@@ -3,6 +3,21 @@
 All notable changes to this project are documented in this file.
 
 
+## [0.9.25] - 2026-04-20
+
+### Fixed
+- Fix multi-poller TTL and add Antenna Live toggle
+
+### Improved
+- update CHANGELOG.md for v0.9.23 (#201)
+
+### Other
+- Cross-compile for arm64 in Dockerfile to kill QEMU build cost
+- Cover dual-source additions with tests
+- Derive origin_country locally for dump1090 aircraft
+- Run multiple flight-source pollers concurrently
+- Surface dump1090 antenna fields in state vector and dashboard
+
 ## [0.9.23] - 2026-03-30
 
 ### Added
