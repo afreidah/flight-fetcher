@@ -185,7 +185,8 @@ func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entries := make([]flightListEntry, len(flights))
-	for i, f := range flights {
+	for i := range flights {
+		f := &flights[i]
 		owners := ""
 		operator := ""
 		if meta, err := s.opts.Aircraft.GetAircraftMeta(r.Context(), f.ICAO24); err == nil && meta != nil && !meta.IsSentinel() {
@@ -193,7 +194,7 @@ func (s *Server) handleListFlights(w http.ResponseWriter, r *http.Request) {
 			operator = meta.OperatorFlagCode
 		}
 		entries[i] = flightListEntry{
-			StateVector:    f,
+			StateVector:    *f,
 			Classification: aircraft.Classify(f.ICAO24, owners),
 			OperatorCode:   operator,
 		}

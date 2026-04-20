@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/airlabs"
@@ -122,22 +123,43 @@ func main() {
 		RouteSources:    routeSources,
 		RouteStore:      pgStore,
 	})
-	var flightSource poller.FlightSource = oskyClient
+
+	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
+	dedup := poller.NewDedupState(cfg.EnrichInterval)
+
+	type sourceSpec struct {
+		name     string
+		source   poller.FlightSource
+		interval time.Duration
+	}
+	specs := []sourceSpec{
+		{name: "opensky", source: oskyClient, interval: firstNonZeroInterval(cfg.OpenSky.Interval, cfg.Poll)},
+	}
 	if cfg.Dump1090 != nil {
-		flightSource = dump1090.NewClient(cfg.Dump1090.URL)
-		slog.InfoContext(ctx, "using dump1090 as flight source", slog.String("url", cfg.Dump1090.URL))
+		specs = append(specs, sourceSpec{
+			name:     "dump1090",
+			source:   dump1090.NewClient(cfg.Dump1090.URL),
+			interval: firstNonZeroInterval(cfg.Dump1090.Interval, cfg.Poll),
+		})
+		slog.InfoContext(ctx, "dump1090 flight source enabled",
+			slog.String("url", cfg.Dump1090.URL),
+			slog.Duration("interval", specs[len(specs)-1].interval))
 	}
 
-	p := poller.New(&poller.Options{
-		Source:        flightSource,
-		Cache:         redisStore,
-		Logger:        pgStore,
-		Enricher:      enr,
-		Center:        geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon},
-		RadiusKm:      cfg.Location.RadiusKm,
-		Interval:      cfg.Poll,
-		EvictInterval: cfg.EnrichInterval,
-	})
+	pollers := make([]*poller.Poller, 0, len(specs))
+	for _, s := range specs {
+		pollers = append(pollers, poller.New(&poller.Options{
+			Name:     s.name,
+			Source:   s.source,
+			Cache:    redisStore,
+			Logger:   pgStore,
+			Enricher: enr,
+			Dedup:    dedup,
+			Center:   center,
+			RadiusKm: cfg.Location.RadiusKm,
+			Interval: s.interval,
+		}))
+	}
 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -184,10 +206,25 @@ func main() {
 		g.Go(func() error { rw.Run(ctx); return nil })
 	}
 
-	g.Go(func() error { p.Run(ctx); return nil })
+	for _, p := range pollers {
+		p := p
+		g.Go(func() error { p.Run(ctx); return nil })
+	}
 
 	if err := g.Wait(); err != nil {
 		slog.ErrorContext(ctx, "shutdown error", slog.String("error", err.Error()))
 	}
 	slog.InfoContext(ctx, "shutdown complete")
+}
+
+// firstNonZeroInterval returns the first interval that is > 0. It lets a
+// per-source interval override the top-level default without requiring
+// callers to handle zero values.
+func firstNonZeroInterval(intervals ...time.Duration) time.Duration {
+	for _, d := range intervals {
+		if d > 0 {
+			return d
+		}
+	}
+	return 0
 }

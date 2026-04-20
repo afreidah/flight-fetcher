@@ -87,10 +87,16 @@ type Location struct {
 	RadiusKm float64 `hcl:"radius_km"`
 }
 
-// OpenSkyConfig holds credentials for the OpenSky Network API.
+// OpenSkyConfig holds credentials for the OpenSky Network API and the
+// optional per-source poll interval. When Interval is zero, the top-level
+// poll_interval is used as the fallback.
 type OpenSkyConfig struct {
-	ID     string `hcl:"id"`
-	Secret string `hcl:"secret"`
+	ID           string `hcl:"id"`
+	Secret       string `hcl:"secret"`
+	PollInterval string `hcl:"poll_interval,optional"`
+
+	// Interval is populated during Load from PollInterval; zero means unset.
+	Interval time.Duration
 }
 
 // RedisConfig holds connection parameters for Redis.
@@ -160,9 +166,15 @@ type TelegramConfig struct {
 	ChatID   string `hcl:"chat_id"`
 }
 
-// Dump1090Config holds settings for a local dump1090/readsb ADS-B receiver.
+// Dump1090Config holds settings for a local dump1090/readsb ADS-B receiver
+// and the optional per-source poll interval. When Interval is zero, the
+// top-level poll_interval is used as the fallback.
 type Dump1090Config struct {
-	URL string `hcl:"url"`
+	URL          string `hcl:"url"`
+	PollInterval string `hcl:"poll_interval,optional"`
+
+	// Interval is populated during Load from PollInterval; zero means unset.
+	Interval time.Duration
 }
 
 // -------------------------------------------------------------------------
@@ -214,6 +226,16 @@ func (r *rawConfig) parse() (*Config, error) {
 	if r.OpenSky.ID == "" || r.OpenSky.Secret == "" {
 		return nil, errors.New("opensky.id and opensky.secret are required")
 	}
+	if r.OpenSky.PollInterval != "" {
+		d, err := time.ParseDuration(r.OpenSky.PollInterval)
+		if err != nil {
+			return nil, fmt.Errorf("opensky.poll_interval: %w", err)
+		}
+		if d < 10*time.Second {
+			return nil, fmt.Errorf("opensky.poll_interval must be at least 10s, got %s", d)
+		}
+		r.OpenSky.Interval = d
+	}
 	if r.Redis.Addr == "" {
 		return nil, errors.New("redis.addr is required")
 	}
@@ -228,6 +250,16 @@ func (r *rawConfig) parse() (*Config, error) {
 	}
 	if r.Dump1090 != nil && r.Dump1090.URL == "" {
 		return nil, errors.New("dump1090.url is required when dump1090 block is present")
+	}
+	if r.Dump1090 != nil && r.Dump1090.PollInterval != "" {
+		d, err := time.ParseDuration(r.Dump1090.PollInterval)
+		if err != nil {
+			return nil, fmt.Errorf("dump1090.poll_interval: %w", err)
+		}
+		if d < time.Second {
+			return nil, fmt.Errorf("dump1090.poll_interval must be at least 1s, got %s", d)
+		}
+		r.Dump1090.Interval = d
 	}
 
 	cfg := &Config{

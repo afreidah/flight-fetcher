@@ -3,10 +3,12 @@
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// Runs on a configurable interval, querying the OpenSky Network API for
-// aircraft within a bounding box, filtering by haversine distance, storing
-// current state in Redis, and logging sightings to Postgres. Enrichment of
-// newly seen aircraft is handled asynchronously by a background worker pool.
+// Runs on a configurable interval, querying a FlightSource for aircraft
+// within a bounding box, filtering by haversine distance, storing current
+// state in Redis, and logging sightings to Postgres. Enrichment of newly
+// seen aircraft is handled asynchronously by a background worker pool.
+// Multiple Poller instances may run concurrently against different sources
+// by sharing a DedupState so enrichment work isn't duplicated.
 // -------------------------------------------------------------------------------
 
 package poller
@@ -18,9 +20,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
-	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
 
 	"go.opentelemetry.io/otel"
@@ -51,7 +53,6 @@ type SightingLogger interface {
 	LogSighting(ctx context.Context, icao24 string, lat, lon, distanceKm float64) error
 }
 
-
 // -------------------------------------------------------------------------
 // CONSTANTS
 // -------------------------------------------------------------------------
@@ -75,39 +76,36 @@ type enrichRequest struct {
 	callsign string
 }
 
-// lastPos tracks the last logged position for sighting deduplication.
-type lastPos struct {
-	lat float64
-	lon float64
-}
-
 // Options holds the dependencies and configuration for the poller.
 type Options struct {
-	Source        FlightSource
-	Cache         FlightCache
-	Logger        SightingLogger
-	Enricher      enricher.Interface
-	Center        geo.Coord
-	RadiusKm      float64
-	Interval      time.Duration
-	EvictInterval time.Duration
+	// Name identifies this poller in logs and metrics (e.g. "antenna",
+	// "opensky"). Required when more than one poller is running so metrics
+	// can be disambiguated by source.
+	Name string
+
+	Source   FlightSource
+	Cache    FlightCache
+	Logger   SightingLogger
+	Enricher enricher.Interface
+
+	// Dedup is shared across concurrent pollers so enrichment isn't
+	// duplicated when multiple sources observe the same aircraft.
+	Dedup *DedupState
+
+	Center   geo.Coord
+	RadiusKm float64
+	Interval time.Duration
 }
 
 // Poller periodically queries a flight source for aircraft near a fixed location.
 type Poller struct {
-	opts       Options
-	enrichCh   chan enrichRequest
+	opts     Options
+	enrichCh chan enrichRequest
 
-	pollCount    metric.Int64Counter
-	pollDuration metric.Float64Histogram
+	pollCount     metric.Int64Counter
+	pollDuration  metric.Float64Histogram
 	aircraftGauge metric.Int64Gauge
-	enrichQueue  metric.Int64Gauge
-
-	mu         sync.Mutex
-	seenICAO   map[string]bool
-	seenRoutes map[string]bool
-	lastEvict  time.Time
-	lastSight  map[string]lastPos
+	enrichQueue   metric.Int64Gauge
 }
 
 // -------------------------------------------------------------------------
@@ -134,10 +132,6 @@ func New(opts *Options) *Poller {
 		pollDuration:  pollDuration,
 		aircraftGauge: aircraftGauge,
 		enrichQueue:   enrichQueue,
-		seenICAO:      make(map[string]bool),
-		seenRoutes:    make(map[string]bool),
-		lastEvict:     time.Now(),
-		lastSight:     make(map[string]lastPos),
 	}
 }
 
@@ -145,9 +139,11 @@ func New(opts *Options) *Poller {
 // ctx is cancelled.
 func (p *Poller) Run(ctx context.Context) {
 	slog.InfoContext(ctx, "poller config",
+		slog.String("source", p.opts.Name),
 		slog.Float64("lat", p.opts.Center.Lat),
 		slog.Float64("lon", p.opts.Center.Lon),
-		slog.Float64("radius_km", p.opts.RadiusKm))
+		slog.Float64("radius_km", p.opts.RadiusKm),
+		slog.Duration("interval", p.opts.Interval))
 
 	var wg sync.WaitGroup
 	for range enrichWorkers {
@@ -158,7 +154,7 @@ func (p *Poller) Run(ctx context.Context) {
 		}()
 	}
 
-	runloop.Run(ctx, "poller", p.opts.Interval, p.poll)
+	runloop.Run(ctx, "poller."+p.opts.Name, p.opts.Interval, p.poll)
 
 	close(p.enrichCh)
 	wg.Wait()
@@ -168,71 +164,71 @@ func (p *Poller) Run(ctx context.Context) {
 // INTERNALS
 // -------------------------------------------------------------------------
 
+// sourceAttr is the common metric/span attribute tagging this poller's source.
+func (p *Poller) sourceAttr() attribute.KeyValue {
+	return attribute.String("source", p.opts.Name)
+}
+
 // poll executes a single poll cycle: query source, filter by distance,
 // store state, log sightings, and submit enrichment requests.
 func (p *Poller) poll(ctx context.Context) {
 	tracer := otel.Tracer("flight-fetcher/poller")
 	ctx, span := tracer.Start(ctx, "poller.poll")
+	span.SetAttributes(p.sourceAttr())
 	defer span.End()
 	start := time.Now()
-	p.mu.Lock()
-	if time.Since(p.lastEvict) >= p.opts.EvictInterval {
+
+	if icaoCount, routeCount, evicted := p.opts.Dedup.MaybeEvict(); evicted {
 		slog.InfoContext(ctx, "evicting enrichment cache",
-			slog.Int("icao_count", len(p.seenICAO)),
-			slog.Int("route_count", len(p.seenRoutes)))
-		p.seenICAO = make(map[string]bool)
-		p.seenRoutes = make(map[string]bool)
-		p.lastSight = make(map[string]lastPos)
-		p.lastEvict = time.Now()
+			slog.String("source", p.opts.Name),
+			slog.Int("icao_count", icaoCount),
+			slog.Int("route_count", routeCount))
 	}
-	p.mu.Unlock()
 
 	bbox := geo.BBoxAround(p.opts.Center, p.opts.RadiusKm)
 	resp, err := p.opts.Source.GetStates(ctx, bbox)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "poll failed")
-		p.pollCount.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "error")))
-		p.pollDuration.Record(ctx, time.Since(start).Seconds())
-		slog.WarnContext(ctx, "poll failed", slog.String("error", err.Error()))
+		p.pollCount.Add(ctx, 1, metric.WithAttributes(p.sourceAttr(), attribute.String("result", "error")))
+		p.pollDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(p.sourceAttr()))
+		slog.WarnContext(ctx, "poll failed",
+			slog.String("source", p.opts.Name),
+			slog.String("error", err.Error()))
 		return
 	}
 
 	count := 0
-	for _, sv := range resp.States {
+	for i := range resp.States {
+		sv := &resp.States[i]
 		dist := geo.HaversineKm(p.opts.Center, geo.Coord{Lat: sv.Latitude, Lon: sv.Longitude})
 		if dist > p.opts.RadiusKm {
 			continue
 		}
 
-		if err := p.opts.Cache.SetFlight(ctx, &sv); err != nil {
+		if err := p.opts.Cache.SetFlight(ctx, sv); err != nil {
 			slog.WarnContext(ctx, "cache write failed",
+				slog.String("source", p.opts.Name),
 				slog.String("icao24", sv.ICAO24),
 				slog.String("error", err.Error()))
 		}
 
-		if p.positionChanged(sv.ICAO24, sv.Latitude, sv.Longitude) {
+		if p.opts.Dedup.PositionChanged(sv.ICAO24, sv.Latitude, sv.Longitude) {
 			if err := p.opts.Logger.LogSighting(ctx, sv.ICAO24, sv.Latitude, sv.Longitude, dist); err != nil {
 				slog.WarnContext(ctx, "sighting log failed",
+					slog.String("source", p.opts.Name),
 					slog.String("icao24", sv.ICAO24),
 					slog.String("error", err.Error()))
 			}
 		}
 
 		callsign := strings.TrimSpace(sv.Callsign)
-		needsEnrich := false
-
-		p.mu.Lock()
-		if !p.seenICAO[sv.ICAO24] || (callsign != "" && !p.seenRoutes[callsign]) {
-			needsEnrich = true
-		}
-		p.mu.Unlock()
-
-		if needsEnrich {
+		if p.opts.Dedup.NeedsEnrichment(sv.ICAO24, callsign) {
 			select {
 			case p.enrichCh <- enrichRequest{icao24: sv.ICAO24, callsign: callsign}:
 			default:
 				slog.WarnContext(ctx, "enrichment queue full, skipping",
+					slog.String("source", p.opts.Name),
 					slog.String("icao24", sv.ICAO24))
 			}
 		}
@@ -240,12 +236,13 @@ func (p *Poller) poll(ctx context.Context) {
 	}
 
 	span.SetAttributes(attribute.Int("aircraft.count", count))
-	p.pollCount.Add(ctx, 1, metric.WithAttributes(attribute.String("result", "ok")))
-	p.pollDuration.Record(ctx, time.Since(start).Seconds())
-	p.aircraftGauge.Record(ctx, int64(count))
-	p.enrichQueue.Record(ctx, int64(len(p.enrichCh)))
+	p.pollCount.Add(ctx, 1, metric.WithAttributes(p.sourceAttr(), attribute.String("result", "ok")))
+	p.pollDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(p.sourceAttr()))
+	p.aircraftGauge.Record(ctx, int64(count), metric.WithAttributes(p.sourceAttr()))
+	p.enrichQueue.Record(ctx, int64(len(p.enrichCh)), metric.WithAttributes(p.sourceAttr()))
 
 	slog.InfoContext(ctx, "poll complete",
+		slog.String("source", p.opts.Name),
 		slog.Int("aircraft_count", count),
 		slog.Float64("radius_km", p.opts.RadiusKm))
 }
@@ -258,53 +255,20 @@ func (p *Poller) enrichWorker(ctx context.Context) {
 			return
 		}
 
-		p.mu.Lock()
-		needICAO := !p.seenICAO[req.icao24]
-		needRoute := req.callsign != "" && !p.seenRoutes[req.callsign]
-		p.mu.Unlock()
+		// Re-check under the shared dedup state: another poller's worker
+		// may have just completed enrichment for the same ICAO/callsign.
+		needICAO := !p.opts.Dedup.isICAOSeen(req.icao24)
+		needRoute := req.callsign != "" && !p.opts.Dedup.isRouteSeen(req.callsign)
 
 		if needICAO {
 			if p.opts.Enricher.Enrich(ctx, req.icao24) {
-				p.mu.Lock()
-				p.seenICAO[req.icao24] = true
-				p.mu.Unlock()
+				p.opts.Dedup.MarkICAOSeen(req.icao24)
 			}
 		}
 		if needRoute {
 			if ok, found := p.opts.Enricher.EnrichRoute(ctx, req.callsign); ok && found {
-				p.mu.Lock()
-				p.seenRoutes[req.callsign] = true
-				p.mu.Unlock()
+				p.opts.Dedup.MarkRouteSeen(req.callsign)
 			}
 		}
 	}
-}
-
-// positionChanged returns true if the aircraft has moved enough since the
-// last logged sighting to warrant a new record. Updates the tracking map.
-func (p *Poller) positionChanged(icao24 string, lat, lon float64) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	prev, ok := p.lastSight[icao24]
-	if !ok {
-		p.lastSight[icao24] = lastPos{lat: lat, lon: lon}
-		return true
-	}
-
-	dlat := lat - prev.lat
-	dlon := lon - prev.lon
-	if dlat < 0 {
-		dlat = -dlat
-	}
-	if dlon < 0 {
-		dlon = -dlon
-	}
-
-	if dlat < sightingMinMove && dlon < sightingMinMove {
-		return false
-	}
-
-	p.lastSight[icao24] = lastPos{lat: lat, lon: lon}
-	return true
 }
