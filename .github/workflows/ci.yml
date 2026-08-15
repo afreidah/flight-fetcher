@@ -128,8 +128,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
+      # govulncheck is tracked as a tool dependency in go.mod, so its version is
+      # locked in go.sum (verified, lock-file enforced) and run via `go tool`.
       - name: Run govulncheck
-        run: govulncheck ./...
+        run: go tool govulncheck ./...
