@@ -92,7 +92,7 @@ type Location struct {
 // poll_interval is used as the fallback.
 type OpenSkyConfig struct {
 	ID           string `hcl:"id"`
-	Secret       string `hcl:"secret"`
+	Secret       string `hcl:"secret" json:"-"`
 	PollInterval string `hcl:"poll_interval,optional"`
 
 	// Interval is populated during Load from PollInterval; zero means unset.
@@ -102,13 +102,15 @@ type OpenSkyConfig struct {
 // RedisConfig holds connection parameters for Redis.
 type RedisConfig struct {
 	Addr     string `hcl:"addr"`
-	Password string `hcl:"password,optional"`
+	Password string `hcl:"password,optional" json:"-"`
 	DB       int    `hcl:"db,optional"`
 }
 
-// PostgresConfig holds connection parameters for PostgreSQL.
+// PostgresConfig holds connection parameters for PostgreSQL. The DSN embeds
+// the database password, so it carries the same json:"-" guard as the other
+// credential-bearing fields.
 type PostgresConfig struct {
-	DSN string `hcl:"dsn"`
+	DSN string `hcl:"dsn" json:"-"`
 }
 
 // ServerConfig holds settings for the optional web dashboard HTTP server.
@@ -128,12 +130,12 @@ func (c *ServerConfig) RefreshSeconds() int {
 
 // AirLabsConfig holds credentials for the AirLabs flight data API.
 type AirLabsConfig struct {
-	APIKey string `hcl:"api_key"`
+	APIKey string `hcl:"api_key" json:"-"`
 }
 
 // FlightAwareConfig holds credentials for the FlightAware AeroAPI.
 type FlightAwareConfig struct {
-	APIKey string `hcl:"api_key"`
+	APIKey string `hcl:"api_key" json:"-"`
 }
 
 // SquawkMonitorConfig holds validated settings for the global emergency squawk monitor.
@@ -156,13 +158,15 @@ type NotificationsConfig struct {
 }
 
 // DiscordConfig holds settings for a Discord webhook notification target.
+// Possession of the webhook URL is sufficient to post to the channel, so it
+// is treated as a credential.
 type DiscordConfig struct {
-	WebhookURL string `hcl:"webhook_url"`
+	WebhookURL string `hcl:"webhook_url" json:"-"`
 }
 
 // TelegramConfig holds settings for a Telegram Bot API notification target.
 type TelegramConfig struct {
-	BotToken string `hcl:"bot_token"`
+	BotToken string `hcl:"bot_token" json:"-"`
 	ChatID   string `hcl:"chat_id"`
 }
 

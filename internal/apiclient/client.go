@@ -63,9 +63,9 @@ type Client struct {
 	maxBodyBytes int64
 	name         string
 
-	tracer    trace.Tracer
-	reqCount  metric.Int64Counter
-	reqDur    metric.Float64Histogram
+	tracer   trace.Tracer
+	reqCount metric.Int64Counter
+	reqDur   metric.Float64Histogram
 
 	mu          sync.Mutex
 	backoff     time.Duration
@@ -144,7 +144,11 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		c.reqDur.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(attrs...))
 	}()
 
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	// Request URLs are built from the configured BaseURL plus caller-supplied
+	// paths. Where a path segment carries request input (the ICAO24 in an
+	// aircraft lookup) the caller escapes it, and the host is never derived
+	// from input, so no request can redirect this call to another origin.
+	resp, err := c.httpClient.Do(req.WithContext(ctx)) //nolint:gosec // G704: see comment above
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "transport error")
@@ -179,9 +183,10 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 // DoRaw executes a request without backoff checking or handling. Used for
 // auxiliary requests like OAuth2 token endpoints that should not participate
-// in the main API's backoff state.
+// in the main API's backoff state. Callers pass constant endpoint URLs, so the
+// taint gosec reports on the inner Do carries no request-derived input.
 func (c *Client) DoRaw(req *http.Request) (*http.Response, error) {
-	return c.httpClient.Do(req)
+	return c.httpClient.Do(req) //nolint:gosec // G704: see comment above
 }
 
 // DecodeJSON reads from r with the configured body size limit and decodes

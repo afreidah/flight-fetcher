@@ -30,8 +30,10 @@ import (
 // CONSTANTS
 // -------------------------------------------------------------------------
 
-// defaultTokenURL is the OpenSky OAuth2 token endpoint.
-const defaultTokenURL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+// defaultTokenURL is the OpenSky OAuth2 token endpoint. gosec matches the
+// "token" in the identifier against its credential patterns; the value is a
+// public endpoint address, not a secret.
+const defaultTokenURL = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token" //nolint:gosec // G101: endpoint URL, not a credential
 
 // -------------------------------------------------------------------------
 // TYPES
@@ -49,9 +51,11 @@ type Client struct {
 	tokenExpiry time.Time
 }
 
-// tokenResponse represents the OAuth2 token endpoint response.
+// tokenResponse represents the OAuth2 token endpoint response. The type is
+// unexported and decode-only, so the access_token tag gosec flags is required
+// to read the response and never serializes anything outward.
 type tokenResponse struct {
-	AccessToken string `json:"access_token"`
+	AccessToken string `json:"access_token"` //nolint:gosec // G117: decode-only, never serialized outward
 	ExpiresIn   int    `json:"expires_in"`
 }
 
