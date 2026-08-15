@@ -3,17 +3,33 @@
 #
 # Project: Flight Fetcher / Author: Alex Freidah
 #
-# Linter settings for static analysis. Enables gocritic (diagnostic + performance
-# tags), misspell, and sloglint for structured logging consistency.
+# Linter settings for static analysis. Mirrors the linter set used across the
+# other Go services in this account: correctness checks (errcheck, staticcheck,
+# bodyclose, noctx), a cognitive-complexity gate matching the SonarCloud
+# threshold, security scanning (gosec), and structured-logging consistency
+# (sloglint). Generated sqlc code is excluded from analysis and formatting.
 # -------------------------------------------------------------------------------
 
 version: "2"
 linters:
   enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - gocognit
     - gocritic
+    - gosec
+    - intrange
     - misspell
+    - noctx
     - sloglint
+    - staticcheck
   settings:
+    gocognit:
+      # Matches the SonarCloud cognitive-complexity gate. gocognit and Sonar
+      # use different algorithms, so this catches most regressions locally but
+      # is not a 1:1 replacement for the Sonar check.
+      min-complexity: 15
     gocritic:
       disabled-checks:
         - exitAfterDefer
@@ -21,13 +37,62 @@ linters:
         - diagnostic
         - performance
     sloglint:
+      # Every log call carries the request context so the TraceHandler can
+      # correlate the line with its span.
       context: "all"
+      # Snake-case keys match the attribute names already in use across the
+      # codebase (icao24, radius_km, aircraft_count).
+      key-naming-case: snake
+      # Banned attribute keys: the canonical name for an error is "error".
+      forbidden-keys:
+        - err
+        - e
   exclusions:
+    generated: lax
     presets:
       - comments
       - common-false-positives
       - legacy
       - std-error-handling
+    paths:
+      - internal/store/sqlc
+    rules:
+      # gosec models a test binary the same as production code, so fixture
+      # credentials and permissive temp-file modes in tests read as findings.
+      # Test code does not ship, so scan production sources only.
+      - path: _test\.go
+        linters:
+          - gosec
+
+      # Four functions exceeded the complexity gate before it was introduced.
+      # Decomposing them is tracked separately: main in #215, the other three
+      # in #216. The exclusions match one function each rather than the whole
+      # file, so a newly added complex function still fails the build. Each
+      # entry is deleted as its issue lands.
+      - linters: [gocognit]
+        text: 'of func `main` is high'
+      - linters: [gocognit]
+        text: 'of func `\(\*rawConfig\)\.parse` is high'
+      - linters: [gocognit]
+        text: 'of func `\(\*Poller\)\.poll` is high'
+      - linters: [gocognit]
+        text: 'of func `\(\*Server\)\.handleGetFlight` is high'
+
+issues:
+  # Report every finding. The defaults (50 per linter, 3 per message) still
+  # fail the build, but they hide most of the work behind the few they print.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
 formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/afreidah/flight-fetcher
   exclusions:
     generated: lax
+    paths:
+      - internal/store/sqlc

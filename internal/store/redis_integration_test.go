@@ -51,15 +51,15 @@ func TestSetAndGetFlight(t *testing.T) {
 	ctx := context.Background()
 
 	sv := &opensky.StateVector{
-		ICAO24:   "abc123",
-		Callsign: "UAL123",
-		Latitude: 34.09,
-		Longitude: -118.33,
+		ICAO24:       "abc123",
+		Callsign:     "UAL123",
+		Latitude:     34.09,
+		Longitude:    -118.33,
 		BaroAltitude: 3048.0,
-		Velocity: 125.5,
-		Heading:  270.0,
-		OnGround: false,
-		Squawk:   "1234",
+		Velocity:     125.5,
+		Heading:      270.0,
+		OnGround:     false,
+		Squawk:       "1234",
 	}
 	if err := store.SetFlight(ctx, sv); err != nil {
 		t.Fatalf("SetFlight() error = %v", err)

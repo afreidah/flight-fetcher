@@ -21,22 +21,22 @@ import (
 
 	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/airlabs"
+	"github.com/afreidah/flight-fetcher/internal/apiclient/dump1090"
+	"github.com/afreidah/flight-fetcher/internal/apiclient/flightaware"
+	"github.com/afreidah/flight-fetcher/internal/apiclient/hexdb"
+	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/config"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
+	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/notify"
 	"github.com/afreidah/flight-fetcher/internal/notify/discord"
 	"github.com/afreidah/flight-fetcher/internal/notify/telegram"
 	"github.com/afreidah/flight-fetcher/internal/observe"
-	"github.com/afreidah/flight-fetcher/internal/apiclient/flightaware"
-	"github.com/afreidah/flight-fetcher/internal/geo"
-	"github.com/afreidah/flight-fetcher/internal/apiclient/hexdb"
-	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/poller"
 	"github.com/afreidah/flight-fetcher/internal/retention"
 	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/server"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
-	"github.com/afreidah/flight-fetcher/internal/apiclient/dump1090"
 	"github.com/afreidah/flight-fetcher/internal/store"
 
 	"golang.org/x/sync/errgroup"
@@ -183,13 +183,13 @@ func main() {
 
 	if cfg.Server != nil && cfg.Server.Listen != "" {
 		srv := server.New(&server.Options{
-			Flights:    redisStore,
-			Heard:      redisStore,
-			Sources:    sourceNames,
-			Aircraft:   pgStore,
-			Routes:     pgStore,
-			Alerts:     pgStore,
-			Images:     hexdbClient,
+			Flights:  redisStore,
+			Heard:    redisStore,
+			Sources:  sourceNames,
+			Aircraft: pgStore,
+			Routes:   pgStore,
+			Alerts:   pgStore,
+			Images:   hexdbClient,
 			Pingers: []server.HealthPinger{
 				{Name: "redis", Pinger: redisStore},
 				{Name: "postgres", Pinger: pgStore},
@@ -224,7 +224,6 @@ func main() {
 	}
 
 	for _, p := range pollers {
-		p := p
 		g.Go(func() error { p.Run(ctx); return nil })
 	}
 

@@ -91,7 +91,10 @@ func (c *Client) Send(ctx context.Context, msg notify.Message) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	// The destination is built from the operator-supplied bot token in config.
+	// No request-derived input reaches it, so the taint gosec reports is
+	// config, not user input.
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: see comment above
 	if err != nil {
 		return fmt.Errorf("sending telegram notification: %w", err)
 	}

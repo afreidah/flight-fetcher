@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
+	"github.com/afreidah/flight-fetcher/internal/geo"
 
 	"go.uber.org/mock/gomock"
 )

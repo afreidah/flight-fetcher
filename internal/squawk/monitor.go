@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/notify"
-	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
 
 	"go.opentelemetry.io/otel"
@@ -62,7 +62,6 @@ type AlertStore interface {
 	InsertSquawkAlert(ctx context.Context, icao24, callsign, squawk string, lat, lon float64) error
 	HasRecentSquawkAlert(ctx context.Context, icao24, squawk string, cooldown time.Duration) (bool, error)
 }
-
 
 // -------------------------------------------------------------------------
 // TYPES

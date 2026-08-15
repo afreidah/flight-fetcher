@@ -110,7 +110,7 @@ func TestDo_RateLimit(t *testing.T) {
 	c := New(Options{BaseURL: srv.URL})
 
 	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
-	_, err := c.Do(req)
+	_, err := c.Do(req) //nolint:bodyclose // Do closes resp.Body on every error path; this test only exercises those.
 	if err == nil {
 		t.Fatal("Do() expected error for 429, got nil")
 	}
@@ -135,7 +135,7 @@ func TestDo_ServerError(t *testing.T) {
 	c := New(Options{BaseURL: srv.URL})
 
 	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
-	_, err := c.Do(req)
+	_, err := c.Do(req) //nolint:bodyclose // Do closes resp.Body on every error path; this test only exercises those.
 	if err == nil {
 		t.Fatal("Do() expected error for 502, got nil")
 	}
@@ -156,7 +156,7 @@ func TestDo_TransportError(t *testing.T) {
 	c := New(Options{BaseURL: "http://127.0.0.1:1"})
 
 	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
-	_, err := c.Do(req)
+	_, err := c.Do(req) //nolint:bodyclose // Do closes resp.Body on every error path; this test only exercises those.
 	if err == nil {
 		t.Fatal("Do() expected error for connection refused, got nil")
 	}
@@ -205,7 +205,7 @@ func TestDo_RateLimitWithRetryAfter(t *testing.T) {
 	c := New(Options{BaseURL: srv.URL})
 
 	req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
-	_, err := c.Do(req)
+	_, err := c.Do(req) //nolint:bodyclose // Do closes resp.Body on every error path; this test only exercises those.
 	if err == nil {
 		t.Fatal("Do() expected error for 429, got nil")
 	}
@@ -228,7 +228,7 @@ func TestDo_BackoffEscalates(t *testing.T) {
 	for range 5 {
 		c.backoffUtil = time.Time{} // clear so we can make the request
 		req, _ := c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
-		_, _ = c.Do(req)
+		_, _ = c.Do(req) //nolint:bodyclose // Do closes resp.Body on every error path; this test only exercises those.
 	}
 
 	// After 5 doublings from 30s: 30->60->120->240->480->600 (capped at maxBackoff)

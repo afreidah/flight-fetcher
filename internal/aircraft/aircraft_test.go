@@ -128,11 +128,12 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-func TestLookupType(t *testing.T) {
+// TestLookupType_Found verifies lookup of known ICAO type codes, including
+// the case-insensitive match.
+func TestLookupType_Found(t *testing.T) {
 	tests := []struct {
 		name     string
 		code     string
-		wantNil  bool
 		wantDesc string
 		wantWTC  string
 	}{
@@ -140,18 +141,10 @@ func TestLookupType(t *testing.T) {
 		{name: "C172", code: "C172", wantDesc: "L1P", wantWTC: "L"},
 		{name: "B77W heavy", code: "B77W", wantDesc: "L2J", wantWTC: "H"},
 		{name: "case insensitive", code: "b738", wantDesc: "L2J", wantWTC: "M"},
-		{name: "not found", code: "XX99", wantNil: true},
-		{name: "empty", code: "", wantNil: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := LookupType(tt.code)
-			if tt.wantNil {
-				if got != nil {
-					t.Errorf("LookupType(%q) = %+v, want nil", tt.code, got)
-				}
-				return
-			}
 			if got == nil {
 				t.Fatalf("LookupType(%q) = nil, want result", tt.code)
 			}
@@ -160,6 +153,24 @@ func TestLookupType(t *testing.T) {
 			}
 			if got.WTC != tt.wantWTC {
 				t.Errorf("WTC = %q, want %q", got.WTC, tt.wantWTC)
+			}
+		})
+	}
+}
+
+// TestLookupType_NotFound verifies that unknown and empty type codes return nil.
+func TestLookupType_NotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+	}{
+		{name: "unknown code", code: "XX99"},
+		{name: "empty code", code: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := LookupType(tt.code); got != nil {
+				t.Errorf("LookupType(%q) = %+v, want nil", tt.code, got)
 			}
 		})
 	}

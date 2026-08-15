@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/afreidah/flight-fetcher/internal/aircraft"
-	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
+	"github.com/afreidah/flight-fetcher/internal/route"
 	"github.com/afreidah/flight-fetcher/internal/squawk"
 )
 
@@ -60,7 +60,7 @@ func (s *stubMetaReader) GetAircraftMeta(_ context.Context, _ string) (*aircraft
 // stubRouteReader is a minimal RouteReader for testing.
 type stubRouteReader struct {
 	info *route.Info
-	err   error
+	err  error
 }
 
 // GetFlightRoute returns the stubbed flight route.
@@ -777,7 +777,7 @@ func TestHandleListFlights_HeardByError(t *testing.T) {
 // heard_by when a HeardChecker is configured.
 func TestHandleGetFlight_HeardBy(t *testing.T) {
 	srv := New(&Options{
-		Flights: &stubFlightLister{flight: &opensky.StateVector{ICAO24: "abc123"}},
+		Flights:  &stubFlightLister{flight: &opensky.StateVector{ICAO24: "abc123"}},
 		Aircraft: &stubMetaReader{},
 		Heard:    &stubHeardChecker{heardMap: map[string][]string{"abc123": {"antenna"}}},
 		Sources:  []string{"antenna", "opensky"},
@@ -816,4 +816,3 @@ func TestHandleHealthz_NoPingers(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 }
-

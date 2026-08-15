@@ -50,7 +50,7 @@ type Aircraft struct {
 	Mach        *float64 `json:"mach"` // Mach number
 
 	// Direction
-	Track       *float64 `json:"track"`       // true track over ground (degrees)
+	Track       *float64 `json:"track"`        // true track over ground (degrees)
 	TrackRate   *float64 `json:"track_rate"`   // track change rate (degrees/sec)
 	MagHeading  *float64 `json:"mag_heading"`  // magnetic heading
 	TrueHeading *float64 `json:"true_heading"` // true heading
@@ -58,10 +58,10 @@ type Aircraft struct {
 
 	// Navigation & automation
 	NavQNH         *float64 `json:"nav_qnh"`          // altimeter setting (hPa)
-	NavAltitudeMCP *float64 `json:"nav_altitude_mcp"`  // selected altitude (MCP/FCU)
-	NavAltitudeFMS *float64 `json:"nav_altitude_fms"`  // selected altitude (FMS)
-	NavHeading     *float64 `json:"nav_heading"`       // selected heading
-	NavModes       []string `json:"nav_modes"`         // active: autopilot, vnav, althold, approach, lnav, tcas
+	NavAltitudeMCP *float64 `json:"nav_altitude_mcp"` // selected altitude (MCP/FCU)
+	NavAltitudeFMS *float64 `json:"nav_altitude_fms"` // selected altitude (FMS)
+	NavHeading     *float64 `json:"nav_heading"`      // selected heading
+	NavModes       []string `json:"nav_modes"`        // active: autopilot, vnav, althold, approach, lnav, tcas
 
 	// Transponder
 	Squawk    string `json:"squawk"`    // Mode A code (4 octal digits)
