@@ -45,7 +45,7 @@ func Setup(ctx context.Context, serviceName, version string) (shutdown func(cont
 		return nil, fmt.Errorf("creating resource: %w", err)
 	}
 
-	// Traces — OTLP gRPC exporter (no-ops if no collector is running)
+	// Traces - OTLP gRPC exporter (no-ops if no collector is running)
 	traceExporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithInsecure(),
 	)
@@ -58,7 +58,7 @@ func Setup(ctx context.Context, serviceName, version string) (shutdown func(cont
 	)
 	otel.SetTracerProvider(tp)
 
-	// Metrics — Prometheus exporter
+	// Metrics - Prometheus exporter
 	promExporter, err := oteloprom.New()
 	if err != nil {
 		return nil, fmt.Errorf("creating prometheus exporter: %w", err)

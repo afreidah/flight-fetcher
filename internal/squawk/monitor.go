@@ -18,8 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
-	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/notify"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
@@ -49,21 +47,6 @@ func isEmergencySquawk(code string) bool {
 }
 
 // -------------------------------------------------------------------------
-// INTERFACES
-// -------------------------------------------------------------------------
-
-// GlobalFlightSource provides aircraft state vectors without geographic bounds.
-type GlobalFlightSource interface {
-	GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error)
-}
-
-// AlertStore persists emergency squawk detections.
-type AlertStore interface {
-	InsertSquawkAlert(ctx context.Context, icao24, callsign, squawk string, lat, lon float64) error
-	HasRecentSquawkAlert(ctx context.Context, icao24, squawk string, cooldown time.Duration) (bool, error)
-}
-
-// -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
 
@@ -73,9 +56,9 @@ const alertCooldown = 30 * time.Minute
 
 // Monitor polls for global emergency squawk codes on a configurable interval.
 type Monitor struct {
-	source   GlobalFlightSource
-	store    AlertStore
-	enricher enricher.Interface
+	source   globalFlightSource
+	store    alertRecorder
+	enricher aircraftEnricher
 	notifier notify.Notifier
 	interval time.Duration
 }
@@ -87,7 +70,7 @@ type Monitor struct {
 // New creates a Monitor with the given dependencies and poll interval.
 // The notifier receives alerts for all detected emergencies; use a
 // notify.Manager to fan out to multiple backends.
-func New(source GlobalFlightSource, store AlertStore, enr enricher.Interface, notifier notify.Notifier, interval time.Duration) *Monitor {
+func New(source globalFlightSource, store alertRecorder, enr aircraftEnricher, notifier notify.Notifier, interval time.Duration) *Monitor {
 	return &Monitor{
 		source:   source,
 		store:    store,

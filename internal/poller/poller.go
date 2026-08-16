@@ -3,7 +3,7 @@
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// Runs on a configurable interval, querying a FlightSource for aircraft
+// Runs on a configurable interval, querying a flight source for aircraft
 // within a bounding box, filtering by haversine distance, storing current
 // state in Redis, and logging sightings to Postgres. Enrichment of newly
 // seen aircraft is handled asynchronously by a background worker pool.
@@ -20,8 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
-	"github.com/afreidah/flight-fetcher/internal/enricher"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
 
@@ -30,31 +28,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 )
-
-//go:generate mockgen -destination mock_poller_test.go -package poller github.com/afreidah/flight-fetcher/internal/poller FlightSource,FlightCache,SightingLogger
-//go:generate mockgen -destination mock_enricher_test.go -package poller github.com/afreidah/flight-fetcher/internal/enricher Interface
-
-// -------------------------------------------------------------------------
-// INTERFACES
-// -------------------------------------------------------------------------
-
-// FlightSource provides aircraft state vectors for a geographic area.
-type FlightSource interface {
-	GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error)
-}
-
-// FlightCache stores current flight state for fast lookup and records
-// per-source liveness so readers can tell which source is currently
-// hearing each aircraft.
-type FlightCache interface {
-	SetFlight(ctx context.Context, sv *opensky.StateVector) error
-	MarkHeard(ctx context.Context, source, icao24 string, ttl time.Duration) error
-}
-
-// SightingLogger records historical aircraft sightings.
-type SightingLogger interface {
-	LogSighting(ctx context.Context, icao24 string, lat, lon, distanceKm float64) error
-}
 
 // -------------------------------------------------------------------------
 // CONSTANTS
@@ -65,7 +38,7 @@ const (
 	enrichQueueSize = 500
 
 	// sightingMinMove is the minimum position change (in degrees) required
-	// to log a new sighting. ~0.005° ≈ 500m at mid-latitudes.
+	// to log a new sighting. 0.005 deg is roughly 500m at mid-latitudes.
 	sightingMinMove = 0.005
 )
 
@@ -79,20 +52,21 @@ type enrichRequest struct {
 	callsign string
 }
 
-// Options holds the dependencies and configuration for the poller.
+// Options holds the dependencies and configuration for the poller. Name
+// identifies this poller in logs and metrics ("antenna", "opensky") and is
+// required when more than one poller is running so metrics can be
+// disambiguated by source. Dedup is shared across concurrent pollers so
+// enrichment is not duplicated when multiple sources observe the same
+// aircraft. Center and RadiusKm define the exact haversine filter applied to
+// every state vector the source returns.
 type Options struct {
-	// Name identifies this poller in logs and metrics (e.g. "antenna",
-	// "opensky"). Required when more than one poller is running so metrics
-	// can be disambiguated by source.
 	Name string
 
-	Source   FlightSource
-	Cache    FlightCache
-	Logger   SightingLogger
-	Enricher enricher.Interface
+	Source   flightSource
+	Cache    flightCache
+	Logger   sightingLogger
+	Enricher aircraftEnricher
 
-	// Dedup is shared across concurrent pollers so enrichment isn't
-	// duplicated when multiple sources observe the same aircraft.
 	Dedup *DedupState
 
 	Center   geo.Coord

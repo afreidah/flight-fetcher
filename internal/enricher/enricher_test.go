@@ -27,7 +27,7 @@ import (
 // TestEnrich_AlreadyCached verifies that a cached aircraft returns true (enrichment complete).
 func TestEnrich_AlreadyCached(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	store := NewMockAircraftStore(ctrl)
+	store := NewMockaircraftMetaReadWriter(ctrl)
 
 	store.EXPECT().
 		GetAircraftMeta(gomock.Any(), "abc123").
@@ -46,7 +46,7 @@ func TestEnrich_AlreadyCached(t *testing.T) {
 // TestEnrich_NewAircraft_LookupSuccess verifies that a new aircraft is looked up and saved.
 func TestEnrich_NewAircraft_LookupSuccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	store := NewMockAircraftStore(ctrl)
+	store := NewMockaircraftMetaReadWriter(ctrl)
 
 	info := &aircraft.Info{
 		ICAO24:           "abc123",
@@ -76,7 +76,7 @@ func TestEnrich_NewAircraft_LookupSuccess(t *testing.T) {
 // TestEnrich_NewAircraft_NotInHexDB verifies that a new aircraft not in HexDB still returns true.
 func TestEnrich_NewAircraft_NotInHexDB(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	store := NewMockAircraftStore(ctrl)
+	store := NewMockaircraftMetaReadWriter(ctrl)
 
 	store.EXPECT().
 		GetAircraftMeta(gomock.Any(), "abc123").
@@ -98,7 +98,7 @@ func TestEnrich_NewAircraft_NotInHexDB(t *testing.T) {
 // TestEnrich_StoreGetError verifies that a store read failure returns false.
 func TestEnrich_StoreGetError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	store := NewMockAircraftStore(ctrl)
+	store := NewMockaircraftMetaReadWriter(ctrl)
 
 	store.EXPECT().
 		GetAircraftMeta(gomock.Any(), "abc123").
@@ -118,7 +118,7 @@ func TestEnrich_StoreGetError(t *testing.T) {
 // and true is returned (enrichment complete, no infinite retry).
 func TestEnrich_LookupError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	store := NewMockAircraftStore(ctrl)
+	store := NewMockaircraftMetaReadWriter(ctrl)
 
 	store.EXPECT().
 		GetAircraftMeta(gomock.Any(), "abc123").
@@ -140,7 +140,7 @@ func TestEnrich_LookupError(t *testing.T) {
 // TestEnrich_SaveError verifies that a save failure still returns true (new aircraft).
 func TestEnrich_SaveError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	store := NewMockAircraftStore(ctrl)
+	store := NewMockaircraftMetaReadWriter(ctrl)
 
 	info := &aircraft.Info{ICAO24: "abc123", Type: "A320"}
 
@@ -174,7 +174,7 @@ func TestEnrichRoute_Disabled(t *testing.T) {
 // TestEnrichRoute_AlreadyCached verifies that a cached route does not trigger a lookup.
 func TestEnrichRoute_AlreadyCached(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	routeStore := NewMockRouteStore(ctrl)
+	routeStore := NewMockrouteReadWriter(ctrl)
 
 	routeStore.EXPECT().
 		GetFlightRoute(gomock.Any(), "AAL2079").
@@ -190,7 +190,7 @@ func TestEnrichRoute_AlreadyCached(t *testing.T) {
 // TestEnrichRoute_NewRoute_LookupSuccess verifies that a new route is looked up and saved.
 func TestEnrichRoute_NewRoute_LookupSuccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	routeStore := NewMockRouteStore(ctrl)
+	routeStore := NewMockrouteReadWriter(ctrl)
 
 	rt := &route.Info{
 		FlightICAO: "AAL2079",
@@ -217,7 +217,7 @@ func TestEnrichRoute_NewRoute_LookupSuccess(t *testing.T) {
 // TestEnrichRoute_NotFound verifies that a missing route does not cause an error.
 func TestEnrichRoute_NotFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	routeStore := NewMockRouteStore(ctrl)
+	routeStore := NewMockrouteReadWriter(ctrl)
 
 	routeStore.EXPECT().
 		GetFlightRoute(gomock.Any(), "AAL2079").
@@ -233,7 +233,7 @@ func TestEnrichRoute_NotFound(t *testing.T) {
 // TestEnrichRoute_LookupError verifies that a lookup failure is handled gracefully.
 func TestEnrichRoute_LookupError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	routeStore := NewMockRouteStore(ctrl)
+	routeStore := NewMockrouteReadWriter(ctrl)
 
 	routeStore.EXPECT().
 		GetFlightRoute(gomock.Any(), "AAL2079").
@@ -249,7 +249,7 @@ func TestEnrichRoute_LookupError(t *testing.T) {
 // TestEnrichRoute_SaveError verifies that a save failure is handled gracefully.
 func TestEnrichRoute_SaveError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	routeStore := NewMockRouteStore(ctrl)
+	routeStore := NewMockrouteReadWriter(ctrl)
 
 	rt := &route.Info{FlightICAO: "AAL2079", DepIATA: "LAX"}
 
@@ -270,7 +270,7 @@ func TestEnrichRoute_SaveError(t *testing.T) {
 // TestEnrichRoute_StoreGetError verifies that a store read failure is handled gracefully.
 func TestEnrichRoute_StoreGetError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	routeStore := NewMockRouteStore(ctrl)
+	routeStore := NewMockrouteReadWriter(ctrl)
 
 	routeStore.EXPECT().
 		GetFlightRoute(gomock.Any(), "AAL2079").

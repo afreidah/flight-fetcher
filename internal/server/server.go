@@ -21,73 +21,35 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/aircraft"
 	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/route"
-	"github.com/afreidah/flight-fetcher/internal/squawk"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // -------------------------------------------------------------------------
-// INTERFACES
-// -------------------------------------------------------------------------
-
-// FlightLister returns all current flights from the cache.
-type FlightLister interface {
-	GetAllFlights(ctx context.Context) ([]opensky.StateVector, error)
-	GetFlight(ctx context.Context, icao24 string) (*opensky.StateVector, error)
-}
-
-// AircraftMetaReader retrieves cached aircraft metadata by ICAO24.
-type AircraftMetaReader interface {
-	GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error)
-}
-
-// RouteReader retrieves cached flight route information by callsign.
-type RouteReader interface {
-	GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error)
-}
-
-// SquawkAlertReader retrieves recent emergency squawk alerts.
-type SquawkAlertReader interface {
-	GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error)
-}
-
-// ImageFetcher resolves an aircraft photo URL by ICAO24.
-type ImageFetcher interface {
-	FetchImageURL(ctx context.Context, icao24 string) string
-}
-
-// HeardChecker reports which sources have observed each aircraft recently.
-// The list of candidate sources is passed in so the same check can be used
-// for any set of pollers.
-type HeardChecker interface {
-	HeardBy(ctx context.Context, icao24 string, sources []string) ([]string, error)
-	HeardByAll(ctx context.Context, icaos, sources []string) (map[string][]string, error)
-}
-
-// Pinger checks if a backend dependency is reachable.
-type Pinger interface {
-	Ping(ctx context.Context) error
-}
-
-// HealthPinger pairs a Pinger with a name for health check reporting.
-type HealthPinger struct {
-	Name   string
-	Pinger Pinger
-}
-
-// -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
 
+// HealthPinger pairs a backend dependency with the name reported for it in
+// the /healthz response.
+type HealthPinger struct {
+	Name   string
+	Pinger pinger
+}
+
 // Options holds the dependencies and configuration for the dashboard server.
+// Routes, Alerts, Images, and Heard are optional: the handlers that use them
+// degrade to omitting that part of the response when they are nil, so a
+// deployment without route enrichment or a second poller still serves. Sources
+// names the pollers the heard-by check considers and must be non-empty for
+// Heard to have any effect.
 type Options struct {
-	Flights    FlightLister
-	Aircraft   AircraftMetaReader
-	Routes     RouteReader
-	Alerts     SquawkAlertReader
-	Images     ImageFetcher
-	Heard      HeardChecker
+	Flights    flightLister
+	Aircraft   aircraftMetaReader
+	Routes     routeReader
+	Alerts     squawkAlertReader
+	Images     imageFetcher
+	Heard      heardChecker
 	Sources    []string
 	Pingers    []HealthPinger
 	Version    string

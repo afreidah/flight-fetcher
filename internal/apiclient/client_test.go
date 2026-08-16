@@ -184,7 +184,7 @@ func TestDo_ClientError_NoBackoff(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Should NOT be in backoff — 4xx is a caller problem, not the server's
+	// Should NOT be in backoff - 4xx is a caller problem, not the server's
 	req, err = c.NewRequest(context.Background(), http.MethodGet, "/test", nil)
 	if err != nil {
 		t.Fatalf("NewRequest() should not be blocked after 404, got: %v", err)

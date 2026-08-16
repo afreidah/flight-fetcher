@@ -70,8 +70,8 @@
 
     h2.section-title { font-size: 0.9rem; padding: 0.5rem 0.5rem 0.25rem; color: #8e7a8a; cursor: pointer; user-select: none; }
     h2.section-title:hover { color: #6b4c5a; }
-    h2.section-title::before { content: "▾ "; font-size: 0.7rem; }
-    h2.section-title.collapsed::before { content: "▸ "; }
+    h2.section-title::before { content: "v "; font-size: 0.7rem; }
+    h2.section-title.collapsed::before { content: "> "; }
     .section-body.collapsed { display: none; }
 
     /* Right pane: map + detail */
@@ -152,7 +152,7 @@
     }
 
     // maybeShowToggle reveals the toggle only when the server advertises an
-    // antenna source via any flight's heard_by — no point showing it in a
+    // antenna source via any flight's heard_by - no point showing it in a
     // single-source deployment.
     function maybeShowToggle(flights) {
       var hasAntenna = flights.some(function(f) {
@@ -175,7 +175,7 @@
       [0x738a00,0x738aff],[0x7cf800,0x7cfaff],[0x800200,0x8002ff],
       [0xc20000,0xc3ffff],[0xe40000,0xe41fff]
     ];
-    // Client-side classification — only military is detectable from hex ranges.
+    // Client-side classification - only military is detectable from hex ranges.
     // LE/EMS require owner data and are shown after clicking (via API).
     function clientClassify(icao24) {
       var v = parseInt(icao24, 16);

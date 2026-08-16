@@ -66,7 +66,7 @@ notifications {
 
 # Optional: local ADS-B receiver (dump1090/readsb/dump1090-fa/PiAware).
 # When configured alongside opensky, BOTH sources run concurrently on
-# independent intervals and write to the same cache/store — last write wins.
+# independent intervals and write to the same cache/store - last write wins.
 # PiAware serves aircraft.json at /skyaware/data/aircraft.json on port 80.
 # dump1090 {
 #   url           = "http://piaware.local/skyaware"

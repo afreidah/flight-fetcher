@@ -52,7 +52,7 @@ A self-hosted aircraft tracking service written in Go that monitors airspace aro
 
 ## Quick Start
 
-The only prerequisite is [Docker](https://docs.docker.com/get-docker/) with Compose. Everything else — Postgres, Redis, and a full observability stack — runs in containers.
+The only prerequisite is [Docker](https://docs.docker.com/get-docker/) with Compose. Everything else - Postgres, Redis, and a full observability stack - runs in containers.
 
 ```bash
 git clone https://github.com/afreidah/flight-fetcher.git
@@ -61,9 +61,9 @@ cp config.example.hcl config.hcl
 ```
 
 Edit `config.hcl` with your API credentials:
-- **OpenSky Network** (required) — register at https://opensky-network.org for a free OAuth2 client ID and secret
-- **AirLabs** (optional) — register at https://airlabs.co for flight route data
-- **FlightAware** (optional) — register at https://flightaware.com/aeroapi for route fallback
+- **OpenSky Network** (required) - register at https://opensky-network.org for a free OAuth2 client ID and secret
+- **AirLabs** (optional) - register at https://airlabs.co for flight route data
+- **FlightAware** (optional) - register at https://flightaware.com/aeroapi for route fallback
 
 Then start the full stack:
 
@@ -79,7 +79,7 @@ This builds the Go binary, stands up Postgres, Redis, the flight-fetcher service
 | Grafana | http://localhost:13000 | Pre-built observability dashboard (metrics, logs, traces) |
 | Prometheus | http://localhost:19090 | Metrics storage and query |
 
-Grafana starts with anonymous admin access — no login required. The flight-fetcher dashboard is auto-imported with all datasources pre-configured. Use `make stop` to stop the stack or `make clean` to stop and remove all data.
+Grafana starts with anonymous admin access - no login required. The flight-fetcher dashboard is auto-imported with all datasources pre-configured. Use `make stop` to stop the stack or `make clean` to stop and remove all data.
 
 ## Configuration
 
@@ -226,13 +226,13 @@ Plus automatic HTTP server metrics from otelhttp and Redis metrics from redisote
 
 Exported via OTLP gRPC. Span hierarchy:
 
-- `poller.poll` — root span per poll cycle
-  - `opensky.request` — OpenSky API call
-  - `postgres.LogSighting` — sighting writes
-- `hexdb.request` / `opensky.request` — enrichment API calls
-  - `postgres.SaveAircraftMeta` — metadata writes
-- `squawk.scan` — root span per squawk scan
-- HTTP request spans — automatic via otelhttp middleware
+- `poller.poll` - root span per poll cycle
+  - `opensky.request` - OpenSky API call
+  - `postgres.LogSighting` - sighting writes
+- `hexdb.request` / `opensky.request` - enrichment API calls
+  - `postgres.SaveAircraftMeta` - metadata writes
+- `squawk.scan` - root span per squawk scan
+- HTTP request spans - automatic via otelhttp middleware
 
 ### Logs (slog JSON)
 
@@ -303,7 +303,7 @@ make release                # tag and push to trigger GitHub Release
 
 ### Integration Tests
 
-`make test-integration` spins up real Postgres and Redis containers via [testcontainers-go](https://golang.testcontainers.org/) and runs 26 tests against them. No external API calls are made — zero credit usage.
+`make test-integration` spins up real Postgres and Redis containers via [testcontainers-go](https://golang.testcontainers.org/) and runs 26 tests against them. No external API calls are made - zero credit usage.
 
 **Postgres (18 tests):** Verifies migrations, CRUD operations, upsert behavior, TTL-aware reads (route staleness), squawk alert cooldown logic, batched retention deletes with old rows inserted via direct SQL, and connection health checks.
 

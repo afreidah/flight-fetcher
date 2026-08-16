@@ -19,24 +19,6 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/route"
 )
 
-//go:generate mockgen -destination mock_enricher_test.go -package enricher github.com/afreidah/flight-fetcher/internal/enricher AircraftStore,RouteStore
-
-// -------------------------------------------------------------------------
-// INTERFACES
-// -------------------------------------------------------------------------
-
-// AircraftStore reads and writes cached aircraft metadata.
-type AircraftStore interface {
-	GetAircraftMeta(ctx context.Context, icao24 string) (*aircraft.Info, error)
-	SaveAircraftMeta(ctx context.Context, info *aircraft.Info) error
-}
-
-// RouteStore reads and writes cached flight route information.
-type RouteStore interface {
-	GetFlightRoute(ctx context.Context, callsign string) (*route.Info, error)
-	SaveFlightRoute(ctx context.Context, route *route.Info) error
-}
-
 // -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
@@ -47,19 +29,15 @@ type NamedSource[T any] struct {
 	Fn   func(ctx context.Context, key string) (*T, error)
 }
 
-// Options holds the dependencies for the enricher.
+// Options holds the dependencies for the enricher. Sources are tried in slice
+// order and the first non-nil result wins, so cheaper or more trusted lookups
+// belong first. Store and RouteStore are the cache checked before any source
+// is called and written back to afterwards.
 type Options struct {
 	AircraftSources []NamedSource[aircraft.Info]
-	Store           AircraftStore
+	Store           aircraftMetaReadWriter
 	RouteSources    []NamedSource[route.Info]
-	RouteStore      RouteStore
-}
-
-// Interface is satisfied by Enricher and describes the enrichment
-// operations consumed by the poller and squawk monitor.
-type Interface interface {
-	Enrich(ctx context.Context, icao24 string) bool
-	EnrichRoute(ctx context.Context, callsign string) (ok bool, found bool)
+	RouteStore      routeReadWriter
 }
 
 // Enricher looks up and caches aircraft metadata and flight route information.
@@ -130,25 +108,32 @@ func (e *Enricher) EnrichRoute(ctx context.Context, callsign string) (bool, bool
 // INTERNALS
 // -------------------------------------------------------------------------
 
-// enrichResult describes the outcome of an enrichment attempt.
+// enrichResult describes the outcome of an enrichment attempt. ok reports that
+// no transient error occurred, so the caller need not retry; found reports that
+// data was actually located and saved.
 type enrichResult struct {
-	ok    bool // true if complete (no transient error)
-	found bool // true if data was found and saved
+	ok    bool
+	found bool
 }
 
-// enrichSpec parameterizes the shared enrichment logic for a given type.
+// enrichSpec parameterizes the shared enrichment logic for a given type. label
+// and keyLabel name the entity and its key for log messages ("aircraft" and
+// "icao24", "route" and "callsign"). get checks the cache, sources are tried in
+// order on a miss, and save persists whatever is found. A non-nil sentinel is
+// saved when every source comes up empty, recording the confirmed miss so the
+// same key is not looked up again. logResult builds the success log attributes.
 type enrichSpec[T any] struct {
-	label     string                                            // e.g. "aircraft", "route"
-	keyLabel  string                                            // e.g. "icao24", "callsign"
-	key       string                                            // the lookup key
-	get       func(ctx context.Context, key string) (*T, error) // cache check
-	sources   []NamedSource[T]                                  // ordered lookup sources
-	save      func(ctx context.Context, val *T) error           // persist result
-	sentinel  *T                                                // if non-nil, saved on miss
-	logResult func(val *T, source string) slog.Attr             // success log attributes
+	label     string
+	keyLabel  string
+	key       string
+	get       func(ctx context.Context, key string) (*T, error)
+	sources   []NamedSource[T]
+	save      func(ctx context.Context, val *T) error
+	sentinel  *T
+	logResult func(val *T, source string) slog.Attr
 }
 
-// enrich implements the shared check-cache → try-sources → save pattern.
+// enrich implements the shared check-cache -> try-sources -> save pattern.
 func enrich[T any](ctx context.Context, spec enrichSpec[T]) enrichResult {
 	existing, err := spec.get(ctx, spec.key)
 	if err != nil {

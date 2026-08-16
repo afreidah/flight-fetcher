@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Alloy config — scrape Docker container logs and ship to Loki
+// Alloy config - scrape Docker container logs and ship to Loki
 // ---------------------------------------------------------------------------
 
 discovery.docker "containers" {
