@@ -45,6 +45,23 @@ import (
 // Version is set at build time via -ldflags.
 var Version = "dev"
 
+// flightSource is the entrypoint's view of a poller data source. main is the
+// composition root and the one place the OpenSky and dump1090 clients are held
+// in the same slice, so the interface that unifies them is declared here
+// rather than exported by the poller.
+type flightSource interface {
+	GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error)
+}
+
+// sourceSpec is a planned poller: the name it reports in logs and metrics, the
+// client it polls, and the interval resolved from per-source config falling
+// back to the top-level default.
+type sourceSpec struct {
+	name     string
+	source   flightSource
+	interval time.Duration
+}
+
 func main() {
 	configPath := flag.String("config", "config.hcl", "path to config file")
 	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error)")
@@ -82,7 +99,7 @@ func main() {
 	hexdbClient := hexdb.NewClient()
 
 	// Redis TTL must cover the slowest poller's cycle so aircraft don't
-	// disappear between polls. 3× the slowest interval gives two grace
+	// disappear between polls. 3x the slowest interval gives two grace
 	// cycles before eviction.
 	slowest := firstNonZeroInterval(cfg.OpenSky.Interval, cfg.Poll)
 	if cfg.Dump1090 != nil {
@@ -140,11 +157,6 @@ func main() {
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
 	dedup := poller.NewDedupState(cfg.EnrichInterval)
 
-	type sourceSpec struct {
-		name     string
-		source   poller.FlightSource
-		interval time.Duration
-	}
 	specs := []sourceSpec{
 		{name: "opensky", source: oskyClient, interval: firstNonZeroInterval(cfg.OpenSky.Interval, cfg.Poll)},
 	}

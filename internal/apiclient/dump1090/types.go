@@ -83,8 +83,8 @@ type Aircraft struct {
 	// Weather (calculated by receiver)
 	WindDirection *float64 `json:"wd"`  // wind direction (degrees)
 	WindSpeed     *float64 `json:"ws"`  // wind speed (knots)
-	OAT           *float64 `json:"oat"` // outside air temperature (°C)
-	TAT           *float64 `json:"tat"` // total air temperature (°C)
+	OAT           *float64 `json:"oat"` // outside air temperature (deg C)
+	TAT           *float64 `json:"tat"` // total air temperature (deg C)
 
 	// Signal & message data
 	Messages int64    `json:"messages"` // total Mode S messages received

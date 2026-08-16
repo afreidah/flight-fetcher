@@ -10,7 +10,7 @@
 // lookup; local sources like dump1090 call into it because the antenna feed
 // never includes country.
 //
-// This table is deliberately non-exhaustive — it covers the top ~25 registries
+// This table is deliberately non-exhaustive - it covers the top ~25 registries
 // that cover >95% of airliner and significant GA traffic worldwide. Unknown
 // hex addresses return an empty string so the UI falls back to "unknown".
 // Extend from ICAO Annex 10 Vol III Appendix as needed.

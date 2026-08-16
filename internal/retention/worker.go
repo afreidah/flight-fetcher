@@ -21,23 +21,12 @@ import (
 )
 
 // -------------------------------------------------------------------------
-// INTERFACES
-// -------------------------------------------------------------------------
-
-// Cleaner deletes old rows from a table and returns the count deleted.
-type Cleaner interface {
-	DeleteOldSightings(ctx context.Context, maxAge time.Duration) (int64, error)
-	DeleteOldSquawkAlerts(ctx context.Context, maxAge time.Duration) (int64, error)
-	DeleteOldRoutes(ctx context.Context, maxAge time.Duration) (int64, error)
-}
-
-// -------------------------------------------------------------------------
 // TYPES
 // -------------------------------------------------------------------------
 
 // Worker periodically cleans up old data from Postgres.
 type Worker struct {
-	cleaner      Cleaner
+	cleaner      cleaner
 	sightingsAge time.Duration
 	alertsAge    time.Duration
 	routesAge    time.Duration
@@ -49,9 +38,9 @@ type Worker struct {
 // -------------------------------------------------------------------------
 
 // New creates a retention Worker with the given cleanup parameters.
-func New(cleaner Cleaner, sightingsAge, alertsAge, routesAge, interval time.Duration) *Worker {
+func New(c cleaner, sightingsAge, alertsAge, routesAge, interval time.Duration) *Worker {
 	return &Worker{
-		cleaner:      cleaner,
+		cleaner:      c,
 		sightingsAge: sightingsAge,
 		alertsAge:    alertsAge,
 		routesAge:    routesAge,

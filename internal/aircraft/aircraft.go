@@ -111,7 +111,7 @@ func LookupType(icaoTypeCode string) *TypeSpec {
 }
 
 // DescribeAircraftClass returns a human-readable description of an ICAO
-// aircraft description code (e.g., "L2J" → "Land, 2 engines, Jet").
+// aircraft description code (e.g., "L2J" -> "Land, 2 engines, Jet").
 func DescribeAircraftClass(desc string) string {
 	if len(desc) < 3 {
 		return desc

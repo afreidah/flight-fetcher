@@ -744,7 +744,7 @@ func TestHandleListFlights_HeardBy(t *testing.T) {
 }
 
 // TestHandleListFlights_HeardByError verifies that a HeardChecker error is
-// logged but does not fail the request — the list still returns without
+// logged but does not fail the request - the list still returns without
 // heard_by populated.
 func TestHandleListFlights_HeardByError(t *testing.T) {
 	flights := []opensky.StateVector{{ICAO24: "abc123"}}

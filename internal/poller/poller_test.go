@@ -45,11 +45,11 @@ func pollAndDrain(p *Poller, ctx context.Context) {
 // TestPoll_FiltersByRadius verifies that only aircraft within the configured radius are processed.
 func TestPoll_FiltersByRadius(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockFlightSource(ctrl)
-	cache := NewMockFlightCache(ctrl)
+	source := NewMockflightSource(ctrl)
+	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockInterface(ctrl)
+	logger := NewMocksightingLogger(ctrl)
+	enricher := NewMockaircraftEnricher(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 	radiusKm := 10.0
@@ -89,11 +89,11 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 // TestPoll_SourceError verifies that a failed API call logs a warning and returns without processing.
 func TestPoll_SourceError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockFlightSource(ctrl)
-	cache := NewMockFlightCache(ctrl)
+	source := NewMockflightSource(ctrl)
+	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockInterface(ctrl)
+	logger := NewMocksightingLogger(ctrl)
+	enricher := NewMockaircraftEnricher(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -108,11 +108,11 @@ func TestPoll_SourceError(t *testing.T) {
 // TestPoll_CacheError_ContinuesProcessing verifies that a Redis failure does not stop sighting logging or enrichment.
 func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockFlightSource(ctrl)
-	cache := NewMockFlightCache(ctrl)
+	source := NewMockflightSource(ctrl)
+	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockInterface(ctrl)
+	logger := NewMocksightingLogger(ctrl)
+	enricher := NewMockaircraftEnricher(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -146,11 +146,11 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 // TestPoll_LoggerError_ContinuesProcessing verifies that a Postgres sighting log failure does not stop enrichment.
 func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockFlightSource(ctrl)
-	cache := NewMockFlightCache(ctrl)
+	source := NewMockflightSource(ctrl)
+	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockInterface(ctrl)
+	logger := NewMocksightingLogger(ctrl)
+	enricher := NewMockaircraftEnricher(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -184,11 +184,11 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 // TestPoll_SkipsEnrichmentOnSecondCycle verifies that already-seen aircraft are not re-enriched.
 func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockFlightSource(ctrl)
-	cache := NewMockFlightCache(ctrl)
+	source := NewMockflightSource(ctrl)
+	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockInterface(ctrl)
+	logger := NewMocksightingLogger(ctrl)
+	enricher := NewMockaircraftEnricher(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -210,7 +210,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 	logger.EXPECT().
 		LogSighting(gomock.Any(), "abc123", gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil).
-		Times(1) // only once — second poll has same position, skipped
+		Times(1) // only once - second poll has same position, skipped
 	enricher.EXPECT().
 		Enrich(gomock.Any(), "abc123").
 		Return(true).
@@ -222,18 +222,18 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 
 	p := New(&Options{Source: source, Cache: cache, Logger: logger, Enricher: enricher, Center: center, RadiusKm: 50.0, Interval: time.Minute, Dedup: NewDedupState(time.Hour)})
 	pollAndDrain(p, context.Background())
-	// Second poll — enrichment and sighting skipped since already seen/unchanged
+	// Second poll - enrichment and sighting skipped since already seen/unchanged
 	pollAndDrain(p, context.Background())
 }
 
 // TestPoll_EvictsSeenMapsAfterInterval verifies that seen maps are cleared after the eviction interval.
 func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockFlightSource(ctrl)
-	cache := NewMockFlightCache(ctrl)
+	source := NewMockflightSource(ctrl)
+	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockInterface(ctrl)
+	logger := NewMocksightingLogger(ctrl)
+	enricher := NewMockaircraftEnricher(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -278,11 +278,11 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 // TestPoll_EmptyResponse verifies that an empty states response completes without errors.
 func TestPoll_EmptyResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockFlightSource(ctrl)
-	cache := NewMockFlightCache(ctrl)
+	source := NewMockflightSource(ctrl)
+	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	logger := NewMockSightingLogger(ctrl)
-	enricher := NewMockInterface(ctrl)
+	logger := NewMocksightingLogger(ctrl)
+	enricher := NewMockaircraftEnricher(ctrl)
 
 	center := geo.Coord{Lat: 34.0928, Lon: -118.3287}
 
@@ -298,27 +298,27 @@ func TestPoll_EmptyResponse(t *testing.T) {
 func TestPositionChanged(t *testing.T) {
 	d := NewDedupState(time.Hour)
 
-	// First observation — always true
+	// First observation - always true
 	if !d.PositionChanged("abc123", 34.09, -118.33) {
 		t.Error("first observation should return true")
 	}
 
-	// Same position — should return false
+	// Same position - should return false
 	if d.PositionChanged("abc123", 34.09, -118.33) {
 		t.Error("identical position should return false")
 	}
 
-	// Tiny move below threshold — should return false
+	// Tiny move below threshold - should return false
 	if d.PositionChanged("abc123", 34.09+0.001, -118.33) {
 		t.Error("sub-threshold move should return false")
 	}
 
-	// Significant move — should return true
+	// Significant move - should return true
 	if !d.PositionChanged("abc123", 34.10, -118.33) {
 		t.Error("significant move should return true")
 	}
 
-	// Different aircraft — always true on first sight
+	// Different aircraft - always true on first sight
 	if !d.PositionChanged("def456", 35.0, -117.0) {
 		t.Error("new aircraft should return true")
 	}

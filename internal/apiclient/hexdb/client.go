@@ -82,7 +82,7 @@ func (c *Client) Lookup(ctx context.Context, icao24 string) (*aircraft.Info, err
 
 // FetchImageURL calls the HexDB image endpoint which returns the actual
 // image URL as plain text. Returns empty string on any failure. Safe to
-// call independently of the API client — uses DoRaw to bypass backoff.
+// call independently of the API client - uses DoRaw to bypass backoff.
 func (c *Client) FetchImageURL(ctx context.Context, icao24 string) string {
 	reqURL := fmt.Sprintf("%s/hex-image?hex=%s", c.imageBaseURL, url.QueryEscape(icao24))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
