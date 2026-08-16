@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w -X main.Version=${VERSION}" -o /flight-fetcher ./cmd/server
 
-FROM alpine:3.19
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates && \
     adduser -D -u 1000 appuser
 COPY --from=build /flight-fetcher /usr/local/bin/flight-fetcher

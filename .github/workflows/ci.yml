@@ -5,6 +5,14 @@
 #
 # Runs on push to main and pull requests. A path-detection job determines if Go
 # files changed and downstream jobs use that output to skip irrelevant work.
+# Lints, tests, and vulnerability-checks the Go code, then publishes merged
+# unit and integration coverage plus the quality gate to SonarCloud.
+#
+# Permissions are declared per job (least privilege) rather than workflow-wide,
+# so a job that later needs a write scope gets it in isolation. Third-party
+# actions are pinned to a full commit SHA with the version in a trailing
+# comment: a mutable tag is arbitrary code execution with repo credentials if
+# upstream ever moves it. First-party actions/* stay on tags.
 # -------------------------------------------------------------------------------
 
 name: CI
@@ -14,25 +22,24 @@ on:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: read
-
 jobs:
   # ---------------------------------------------------------------------------
   # PATH DETECTION
   # ---------------------------------------------------------------------------
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       go: ${{ steps.filter.outputs.go }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           filters: |
             go:
@@ -41,6 +48,10 @@ jobs:
               - 'go.sum'
               - 'Makefile'
               - '.golangci.yml'
+              # The Go jobs are defined here, so a change to this file can alter
+              # or break them. Without this, a workflow-only edit ships with the
+              # jobs it modifies never having run.
+              - '.github/workflows/ci.yml'
 
   # ---------------------------------------------------------------------------
   # GO CHECKS
@@ -49,10 +60,12 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -63,26 +76,33 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.10.1
 
+  # Runs on Go-touching PRs and on every push to main: a main push always needs
+  # fresh coverage so the SonarQube scan can re-analyse main without resetting
+  # stored coverage, even when only non-Go files changed.
   test:
     needs: [changes]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -90,20 +110,25 @@ jobs:
         run: go test -short -race -coverprofile=unit.out -covermode=atomic ./...
 
       - name: Upload unit coverage
-        uses: codecov/codecov-action@v5
+        uses: actions/upload-artifact@v7
         with:
-          files: unit.out
-          flags: unit
-          token: ${{ secrets.CODECOV_TOKEN }}
+          name: unit-coverage
+          path: unit.out
 
+  # Same as the unit test job: also runs on every push to main so the SonarQube
+  # scan has merged unit and integration coverage for main. internal/store is
+  # covered only here, behind testcontainers, so without this half the store
+  # package reads as untested in the dashboard.
   integration-test:
     needs: [changes]
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -111,20 +136,21 @@ jobs:
         run: go test -race -count=1 -timeout=5m -coverprofile=integration.out -covermode=atomic ./internal/store/...
 
       - name: Upload integration coverage
-        uses: codecov/codecov-action@v5
+        uses: actions/upload-artifact@v7
         with:
-          files: integration.out
-          flags: integration
-          token: ${{ secrets.CODECOV_TOKEN }}
+          name: integration-coverage
+          path: integration.out
 
   govulncheck:
     needs: [changes]
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -132,3 +158,47 @@ jobs:
       # locked in go.sum (verified, lock-file enforced) and run via `go tool`.
       - name: Run govulncheck
         run: go tool govulncheck ./...
+
+  # ---------------------------------------------------------------------------
+  # SONARQUBE ANALYSIS (coverage + quality gate -> SonarCloud)
+  #
+  # Runs on every push to main and every PR rather than gated on Go changes, so
+  # non-Go fixes get re-analysed and their findings clear instead of lingering
+  # as stale. The test jobs also run on main pushes, so the coverage artifacts
+  # exist here and the scan re-analyses main without zeroing coverage. A PR with
+  # no Go change still runs; its gate has no coverage condition.
+  #
+  # Skipped for Dependabot PRs: they run with a restricted token that cannot
+  # read the SONAR_TOKEN secret, so the scan can only fail on auth. A job-level
+  # skip reports as a passing required check, unlike a hard failure.
+  # ---------------------------------------------------------------------------
+  sonarqube:
+    needs: [changes, test, integration-test]
+    if: always() && github.actor != 'dependabot[bot]' && needs.test.result != 'failure' && needs.test.result != 'cancelled' && (github.event_name == 'pull_request' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history so SonarCloud can attribute new code
+
+      # continue-on-error because a PR that touches no Go file skips the test
+      # jobs entirely. The scan should still run for the quality gate; it just
+      # reports no new coverage, leaving the stored figure intact.
+      - name: Download unit coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: unit-coverage
+        continue-on-error: true
+
+      - name: Download integration coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: integration-coverage
+        continue-on-error: true
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

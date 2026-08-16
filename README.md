@@ -3,7 +3,8 @@
 # Flight Fetcher
 
 [![CI](https://github.com/afreidah/flight-fetcher/actions/workflows/ci.yml/badge.svg)](https://github.com/afreidah/flight-fetcher/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/afreidah/flight-fetcher/branch/main/graph/badge.svg)](https://codecov.io/gh/afreidah/flight-fetcher)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=afreidah_flight-fetcher&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=afreidah_flight-fetcher)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=afreidah_flight-fetcher&metric=coverage)](https://sonarcloud.io/summary/new_code?id=afreidah_flight-fetcher)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A self-hosted aircraft tracking service written in Go that monitors airspace around a configurable location in real time. The service polls the OpenSky Network API for aircraft within a given radius, enriches each flight with metadata and route information from multiple sources, monitors for global emergency squawk codes, and serves a live web dashboard with an interactive map.
@@ -313,7 +314,9 @@ Requires Docker. Containers are started once per test run and cleaned up automat
 
 ### CI
 
-The GitHub Actions CI pipeline runs unit tests and integration tests as separate jobs. Unit tests upload coverage to Codecov. Integration tests run against testcontainers with Docker available on the GitHub Actions runner.
+The GitHub Actions CI pipeline runs unit tests and integration tests as separate jobs. Integration tests run against testcontainers with Docker available on the GitHub Actions runner.
+
+Each job uploads its coverage profile as a workflow artifact, and a final SonarQube job downloads both and hands them to the scanner, so the figure in SonarCloud is unit and integration coverage merged rather than either alone. Analysis settings live in `sonar-project.properties`.
 
 ## Project Structure
 
