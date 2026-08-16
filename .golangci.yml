@@ -64,19 +64,12 @@ linters:
         linters:
           - gosec
 
-      # Four functions exceeded the complexity gate before it was introduced.
-      # Decomposing them is tracked separately: main in #215, the other three
-      # in #216. The exclusions match one function each rather than the whole
-      # file, so a newly added complex function still fails the build. Each
-      # entry is deleted as its issue lands.
+      # main exceeded the complexity gate before it was introduced.
+      # Decomposing it is tracked in #215. The exclusion matches that one
+      # function rather than the whole file, so a newly added complex function
+      # still fails the build, and it is deleted as the issue lands.
       - linters: [gocognit]
         text: 'of func `main` is high'
-      - linters: [gocognit]
-        text: 'of func `\(\*rawConfig\)\.parse` is high'
-      - linters: [gocognit]
-        text: 'of func `\(\*Poller\)\.poll` is high'
-      - linters: [gocognit]
-        text: 'of func `\(\*Server\)\.handleGetFlight` is high'
 
 issues:
   # Report every finding. The defaults (50 per linter, 3 per message) still

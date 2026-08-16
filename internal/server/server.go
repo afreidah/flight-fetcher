@@ -210,6 +210,18 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	detail := flightDetail{State: sv}
+	s.attachAircraft(r, icao24, &detail)
+	s.attachRoute(r, icao24, sv.Callsign, &detail)
+	s.attachHeardBy(r, icao24, &detail)
+
+	writeJSON(r.Context(), w, detail)
+}
+
+// attachAircraft fills in the metadata-derived fields of detail. A lookup
+// failure and a sentinel record are both treated as "no metadata": the
+// aircraft still gets a classification from its ICAO24 alone, so the response
+// degrades to live state rather than failing.
+func (s *Server) attachAircraft(r *http.Request, icao24 string, detail *flightDetail) {
 	meta, err := s.opts.Aircraft.GetAircraftMeta(r.Context(), icao24)
 	if err != nil {
 		slog.WarnContext(r.Context(), "api: aircraft meta lookup failed",
@@ -219,42 +231,50 @@ func (s *Server) handleGetFlight(w http.ResponseWriter, r *http.Request) {
 	if meta != nil && meta.IsSentinel() {
 		meta = nil
 	}
-	if meta != nil && meta.ImageURL == "" && s.opts.Images != nil {
+
+	detail.Aircraft = meta
+	if meta == nil {
+		detail.Classification = aircraft.Classify(icao24, "")
+		return
+	}
+
+	if meta.ImageURL == "" && s.opts.Images != nil {
 		meta.ImageURL = s.opts.Images.FetchImageURL(r.Context(), icao24)
 	}
-	detail.Aircraft = meta
-	owners := ""
-	if meta != nil {
-		owners = meta.RegisteredOwners
-	}
-	detail.Classification = aircraft.Classify(icao24, owners)
-	if meta != nil {
-		detail.TypeSpec = aircraft.LookupType(meta.ICAOTypeCode)
-		detail.Airline = aircraft.LookupAirline(meta.OperatorFlagCode)
-	}
+	detail.Classification = aircraft.Classify(icao24, meta.RegisteredOwners)
+	detail.TypeSpec = aircraft.LookupType(meta.ICAOTypeCode)
+	detail.Airline = aircraft.LookupAirline(meta.OperatorFlagCode)
+}
 
-	if s.opts.Routes != nil && sv.Callsign != "" {
-		route, err := s.opts.Routes.GetFlightRoute(r.Context(), strings.TrimSpace(sv.Callsign))
-		if err != nil {
-			slog.WarnContext(r.Context(), "api: route lookup failed",
-				slog.String("icao24", icao24),
-				slog.String("error", err.Error()))
-		}
-		detail.Route = route
+// attachRoute fills in the route field when route enrichment is configured and
+// the aircraft is broadcasting a callsign to look it up by.
+func (s *Server) attachRoute(r *http.Request, icao24, callsign string, detail *flightDetail) {
+	if s.opts.Routes == nil || callsign == "" {
+		return
 	}
-
-	if s.opts.Heard != nil && len(s.opts.Sources) > 0 {
-		heard, err := s.opts.Heard.HeardBy(r.Context(), icao24, s.opts.Sources)
-		if err != nil {
-			slog.WarnContext(r.Context(), "api: heard-by lookup failed",
-				slog.String("icao24", icao24),
-				slog.String("error", err.Error()))
-		} else {
-			detail.HeardBy = heard
-		}
+	route, err := s.opts.Routes.GetFlightRoute(r.Context(), strings.TrimSpace(callsign))
+	if err != nil {
+		slog.WarnContext(r.Context(), "api: route lookup failed",
+			slog.String("icao24", icao24),
+			slog.String("error", err.Error()))
 	}
+	detail.Route = route
+}
 
-	writeJSON(r.Context(), w, detail)
+// attachHeardBy fills in which configured sources are currently hearing the
+// aircraft. Only meaningful when at least one poller source is named.
+func (s *Server) attachHeardBy(r *http.Request, icao24 string, detail *flightDetail) {
+	if s.opts.Heard == nil || len(s.opts.Sources) == 0 {
+		return
+	}
+	heard, err := s.opts.Heard.HeardBy(r.Context(), icao24, s.opts.Sources)
+	if err != nil {
+		slog.WarnContext(r.Context(), "api: heard-by lookup failed",
+			slog.String("icao24", icao24),
+			slog.String("error", err.Error()))
+		return
+	}
+	detail.HeardBy = heard
 }
 
 // handleSquawkAlerts returns recent emergency squawk alerts as JSON.
