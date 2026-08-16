@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/afreidah/flight-fetcher/internal/apiclient/opensky"
 	"github.com/afreidah/flight-fetcher/internal/geo"
 	"github.com/afreidah/flight-fetcher/internal/runloop"
 
@@ -182,39 +183,7 @@ func (p *Poller) poll(ctx context.Context) {
 		if dist > p.opts.RadiusKm {
 			continue
 		}
-
-		if err := p.opts.Cache.SetFlight(ctx, sv); err != nil {
-			slog.WarnContext(ctx, "cache write failed",
-				slog.String("source", p.opts.Name),
-				slog.String("icao24", sv.ICAO24),
-				slog.String("error", err.Error()))
-		}
-		if err := p.opts.Cache.MarkHeard(ctx, p.opts.Name, sv.ICAO24, p.opts.Interval*3); err != nil {
-			slog.WarnContext(ctx, "heard marker write failed",
-				slog.String("source", p.opts.Name),
-				slog.String("icao24", sv.ICAO24),
-				slog.String("error", err.Error()))
-		}
-
-		if p.opts.Dedup.PositionChanged(sv.ICAO24, sv.Latitude, sv.Longitude) {
-			if err := p.opts.Logger.LogSighting(ctx, sv.ICAO24, sv.Latitude, sv.Longitude, dist); err != nil {
-				slog.WarnContext(ctx, "sighting log failed",
-					slog.String("source", p.opts.Name),
-					slog.String("icao24", sv.ICAO24),
-					slog.String("error", err.Error()))
-			}
-		}
-
-		callsign := strings.TrimSpace(sv.Callsign)
-		if p.opts.Dedup.NeedsEnrichment(sv.ICAO24, callsign) {
-			select {
-			case p.enrichCh <- enrichRequest{icao24: sv.ICAO24, callsign: callsign}:
-			default:
-				slog.WarnContext(ctx, "enrichment queue full, skipping",
-					slog.String("source", p.opts.Name),
-					slog.String("icao24", sv.ICAO24))
-			}
-		}
+		p.recordAircraft(ctx, sv, dist)
 		count++
 	}
 
@@ -228,6 +197,47 @@ func (p *Poller) poll(ctx context.Context) {
 		slog.String("source", p.opts.Name),
 		slog.Int("aircraft_count", count),
 		slog.Float64("radius_km", p.opts.RadiusKm))
+}
+
+// recordAircraft handles one in-radius aircraft: refresh its cached state and
+// heard marker, log a sighting if it has moved far enough to be worth a row,
+// and queue it for enrichment if it is newly seen. Every step is independent,
+// so a failure in one is logged and the rest still run - a cache write that
+// fails must not cost the sighting behind it.
+func (p *Poller) recordAircraft(ctx context.Context, sv *opensky.StateVector, dist float64) {
+	if err := p.opts.Cache.SetFlight(ctx, sv); err != nil {
+		slog.WarnContext(ctx, "cache write failed",
+			slog.String("source", p.opts.Name),
+			slog.String("icao24", sv.ICAO24),
+			slog.String("error", err.Error()))
+	}
+	if err := p.opts.Cache.MarkHeard(ctx, p.opts.Name, sv.ICAO24, p.opts.Interval*3); err != nil {
+		slog.WarnContext(ctx, "heard marker write failed",
+			slog.String("source", p.opts.Name),
+			slog.String("icao24", sv.ICAO24),
+			slog.String("error", err.Error()))
+	}
+
+	if p.opts.Dedup.PositionChanged(sv.ICAO24, sv.Latitude, sv.Longitude) {
+		if err := p.opts.Logger.LogSighting(ctx, sv.ICAO24, sv.Latitude, sv.Longitude, dist); err != nil {
+			slog.WarnContext(ctx, "sighting log failed",
+				slog.String("source", p.opts.Name),
+				slog.String("icao24", sv.ICAO24),
+				slog.String("error", err.Error()))
+		}
+	}
+
+	callsign := strings.TrimSpace(sv.Callsign)
+	if !p.opts.Dedup.NeedsEnrichment(sv.ICAO24, callsign) {
+		return
+	}
+	select {
+	case p.enrichCh <- enrichRequest{icao24: sv.ICAO24, callsign: callsign}:
+	default:
+		slog.WarnContext(ctx, "enrichment queue full, skipping",
+			slog.String("source", p.opts.Name),
+			slog.String("icao24", sv.ICAO24))
+	}
 }
 
 // enrichWorker drains the enrichment channel, calling the enricher for

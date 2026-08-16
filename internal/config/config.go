@@ -23,10 +23,16 @@ import (
 // RAW HCL TYPES (unexported, used only for deserialization)
 // -------------------------------------------------------------------------
 
-// rawConfig mirrors the HCL file structure with string durations.
+// rawConfig mirrors the HCL file structure with string durations. The
+// untagged poll and enrich fields hold the parsed forms of PollInterval and
+// EnrichmentRefresh; they are populated by parseIntervals during validation
+// and are invisible to the HCL decoder, which only considers tagged fields.
 type rawConfig struct {
 	PollInterval      string `hcl:"poll_interval"`
 	EnrichmentRefresh string `hcl:"enrichment_refresh,optional"`
+
+	poll   time.Duration
+	enrich time.Duration
 
 	Location      Location                `hcl:"location,block"`
 	OpenSky       OpenSkyConfig           `hcl:"opensky,block"`
@@ -199,76 +205,29 @@ func Load(path string) (*Config, error) {
 // INTERNALS
 // -------------------------------------------------------------------------
 
-// parse validates the raw HCL input and produces a Config with parsed durations.
+// parse validates the raw HCL input and produces a Config with parsed
+// durations. Validation runs one step per config block, in the slice order
+// below, and stops at the first failure, so the error a user sees names the
+// earliest offending block rather than an arbitrary one.
 func (r *rawConfig) parse() (*Config, error) {
-	if r.Location.Lat < -90 || r.Location.Lat > 90 {
-		return nil, fmt.Errorf("location.lat must be between -90 and 90, got %f", r.Location.Lat)
-	}
-	if r.Location.Lon < -180 || r.Location.Lon > 180 {
-		return nil, fmt.Errorf("location.lon must be between -180 and 180, got %f", r.Location.Lon)
-	}
-	if r.Location.RadiusKm <= 0 {
-		return nil, errors.New("location.radius_km must be positive")
-	}
-
-	poll, err := time.ParseDuration(r.PollInterval)
-	if err != nil {
-		return nil, fmt.Errorf("poll_interval: %w", err)
-	}
-	if poll < 10*time.Second {
-		return nil, fmt.Errorf("poll_interval must be at least 10s, got %s", poll)
-	}
-
-	enrichInterval := time.Hour
-	if r.EnrichmentRefresh != "" {
-		enrichInterval, err = time.ParseDuration(r.EnrichmentRefresh)
-		if err != nil {
-			return nil, fmt.Errorf("enrichment_refresh: %w", err)
+	for _, validate := range []func() error{
+		r.validateLocation,
+		r.parseIntervals,
+		r.parseOpenSky,
+		r.validateRedis,
+		r.validatePostgres,
+		r.validateAirLabs,
+		r.validateFlightAware,
+		r.parseDump1090,
+	} {
+		if err := validate(); err != nil {
+			return nil, err
 		}
-	}
-
-	if r.OpenSky.ID == "" || r.OpenSky.Secret == "" {
-		return nil, errors.New("opensky.id and opensky.secret are required")
-	}
-	if r.OpenSky.PollInterval != "" {
-		d, err := time.ParseDuration(r.OpenSky.PollInterval)
-		if err != nil {
-			return nil, fmt.Errorf("opensky.poll_interval: %w", err)
-		}
-		if d < 10*time.Second {
-			return nil, fmt.Errorf("opensky.poll_interval must be at least 10s, got %s", d)
-		}
-		r.OpenSky.Interval = d
-	}
-	if r.Redis.Addr == "" {
-		return nil, errors.New("redis.addr is required")
-	}
-	if r.Postgres.DSN == "" {
-		return nil, errors.New("postgres.dsn is required")
-	}
-	if r.AirLabs != nil && r.AirLabs.APIKey == "" {
-		return nil, errors.New("airlabs.api_key is required when airlabs block is present")
-	}
-	if r.FlightAware != nil && r.FlightAware.APIKey == "" {
-		return nil, errors.New("flightaware.api_key is required when flightaware block is present")
-	}
-	if r.Dump1090 != nil && r.Dump1090.URL == "" {
-		return nil, errors.New("dump1090.url is required when dump1090 block is present")
-	}
-	if r.Dump1090 != nil && r.Dump1090.PollInterval != "" {
-		d, err := time.ParseDuration(r.Dump1090.PollInterval)
-		if err != nil {
-			return nil, fmt.Errorf("dump1090.poll_interval: %w", err)
-		}
-		if d < time.Second {
-			return nil, fmt.Errorf("dump1090.poll_interval must be at least 1s, got %s", d)
-		}
-		r.Dump1090.Interval = d
 	}
 
 	cfg := &Config{
-		Poll:           poll,
-		EnrichInterval: enrichInterval,
+		Poll:           r.poll,
+		EnrichInterval: r.enrich,
 		Location:       r.Location,
 		OpenSky:        r.OpenSky,
 		Redis:          r.Redis,
@@ -278,11 +237,138 @@ func (r *rawConfig) parse() (*Config, error) {
 		Server:         r.Server,
 		Dump1090:       r.Dump1090,
 	}
+	if err := r.parseOptionalBlocks(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
 
+// validateLocation checks that the receiver coordinates are on the globe and
+// the search radius is usable.
+func (r *rawConfig) validateLocation() error {
+	if r.Location.Lat < -90 || r.Location.Lat > 90 {
+		return fmt.Errorf("location.lat must be between -90 and 90, got %f", r.Location.Lat)
+	}
+	if r.Location.Lon < -180 || r.Location.Lon > 180 {
+		return fmt.Errorf("location.lon must be between -180 and 180, got %f", r.Location.Lon)
+	}
+	if r.Location.RadiusKm <= 0 {
+		return errors.New("location.radius_km must be positive")
+	}
+	return nil
+}
+
+// parseIntervals parses the two top-level durations into r.poll and r.enrich.
+// The poll floor of 10s keeps the default source inside the OpenSky credit
+// budget. Enrichment refresh defaults to an hour when omitted.
+func (r *rawConfig) parseIntervals() error {
+	poll, err := time.ParseDuration(r.PollInterval)
+	if err != nil {
+		return fmt.Errorf("poll_interval: %w", err)
+	}
+	if poll < 10*time.Second {
+		return fmt.Errorf("poll_interval must be at least 10s, got %s", poll)
+	}
+	r.poll = poll
+
+	r.enrich = time.Hour
+	if r.EnrichmentRefresh != "" {
+		enrich, err := time.ParseDuration(r.EnrichmentRefresh)
+		if err != nil {
+			return fmt.Errorf("enrichment_refresh: %w", err)
+		}
+		r.enrich = enrich
+	}
+	return nil
+}
+
+// parseOpenSky checks that credentials are present and parses the optional
+// per-source poll interval, which carries the same 10s floor as the top-level
+// default because it overrides it for the same credit-metered API.
+func (r *rawConfig) parseOpenSky() error {
+	if r.OpenSky.ID == "" || r.OpenSky.Secret == "" {
+		return errors.New("opensky.id and opensky.secret are required")
+	}
+	if r.OpenSky.PollInterval == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(r.OpenSky.PollInterval)
+	if err != nil {
+		return fmt.Errorf("opensky.poll_interval: %w", err)
+	}
+	if d < 10*time.Second {
+		return fmt.Errorf("opensky.poll_interval must be at least 10s, got %s", d)
+	}
+	r.OpenSky.Interval = d
+	return nil
+}
+
+// validateRedis checks that a Redis address is configured.
+func (r *rawConfig) validateRedis() error {
+	if r.Redis.Addr == "" {
+		return errors.New("redis.addr is required")
+	}
+	return nil
+}
+
+// validatePostgres checks that a Postgres DSN is configured.
+func (r *rawConfig) validatePostgres() error {
+	if r.Postgres.DSN == "" {
+		return errors.New("postgres.dsn is required")
+	}
+	return nil
+}
+
+// validateAirLabs checks that the optional AirLabs block carries a key when
+// present, since a keyless block would silently disable route enrichment.
+func (r *rawConfig) validateAirLabs() error {
+	if r.AirLabs != nil && r.AirLabs.APIKey == "" {
+		return errors.New("airlabs.api_key is required when airlabs block is present")
+	}
+	return nil
+}
+
+// validateFlightAware checks that the optional FlightAware block carries a key
+// when present.
+func (r *rawConfig) validateFlightAware() error {
+	if r.FlightAware != nil && r.FlightAware.APIKey == "" {
+		return errors.New("flightaware.api_key is required when flightaware block is present")
+	}
+	return nil
+}
+
+// parseDump1090 validates the optional local receiver block. Its poll floor is
+// 1s rather than 10s: the receiver is on the local network with no credit
+// budget, so it is polled far more often than the wide-area source.
+func (r *rawConfig) parseDump1090() error {
+	if r.Dump1090 == nil {
+		return nil
+	}
+	if r.Dump1090.URL == "" {
+		return errors.New("dump1090.url is required when dump1090 block is present")
+	}
+	if r.Dump1090.PollInterval == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(r.Dump1090.PollInterval)
+	if err != nil {
+		return fmt.Errorf("dump1090.poll_interval: %w", err)
+	}
+	if d < time.Second {
+		return fmt.Errorf("dump1090.poll_interval must be at least 1s, got %s", d)
+	}
+	r.Dump1090.Interval = d
+	return nil
+}
+
+// parseOptionalBlocks fills in the Config fields whose blocks are absent by
+// default. Each stays nil when its block is omitted, which is how the
+// composition root decides whether to start the corresponding component.
+func (r *rawConfig) parseOptionalBlocks(cfg *Config) error {
 	if r.SquawkMonitor != nil {
 		smPoll, err := time.ParseDuration(r.SquawkMonitor.Interval)
 		if err != nil {
-			return nil, fmt.Errorf("squawk_monitor.interval: %w", err)
+			return fmt.Errorf("squawk_monitor.interval: %w", err)
 		}
 		cfg.SquawkMonitor = &SquawkMonitorConfig{Poll: smPoll}
 	}
@@ -290,7 +376,7 @@ func (r *rawConfig) parse() (*Config, error) {
 	if r.Retention != nil {
 		ret, err := parseRetention(r.Retention)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		cfg.Retention = ret
 	}
@@ -298,12 +384,11 @@ func (r *rawConfig) parse() (*Config, error) {
 	if r.Notifications != nil {
 		notif, err := parseNotifications(r.Notifications)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		cfg.Notifications = notif
 	}
-
-	return cfg, nil
+	return nil
 }
 
 // parseRetention validates and parses the raw retention config.
