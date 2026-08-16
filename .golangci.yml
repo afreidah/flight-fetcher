@@ -64,13 +64,6 @@ linters:
         linters:
           - gosec
 
-      # main exceeded the complexity gate before it was introduced.
-      # Decomposing it is tracked in #215. The exclusion matches that one
-      # function rather than the whole file, so a newly added complex function
-      # still fails the build, and it is deleted as the issue lands.
-      - linters: [gocognit]
-        text: 'of func `main` is high'
-
 issues:
   # Report every finding. The defaults (50 per linter, 3 per message) still
   # fail the build, but they hide most of the work behind the few they print.
