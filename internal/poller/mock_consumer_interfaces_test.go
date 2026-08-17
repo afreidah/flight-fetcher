@@ -19,32 +19,32 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockflightSource is a mock of flightSource interface.
-type MockflightSource struct {
+// MockstateFetcher is a mock of stateFetcher interface.
+type MockstateFetcher struct {
 	ctrl     *gomock.Controller
-	recorder *MockflightSourceMockRecorder
+	recorder *MockstateFetcherMockRecorder
 	isgomock struct{}
 }
 
-// MockflightSourceMockRecorder is the mock recorder for MockflightSource.
-type MockflightSourceMockRecorder struct {
-	mock *MockflightSource
+// MockstateFetcherMockRecorder is the mock recorder for MockstateFetcher.
+type MockstateFetcherMockRecorder struct {
+	mock *MockstateFetcher
 }
 
-// NewMockflightSource creates a new mock instance.
-func NewMockflightSource(ctrl *gomock.Controller) *MockflightSource {
-	mock := &MockflightSource{ctrl: ctrl}
-	mock.recorder = &MockflightSourceMockRecorder{mock}
+// NewMockstateFetcher creates a new mock instance.
+func NewMockstateFetcher(ctrl *gomock.Controller) *MockstateFetcher {
+	mock := &MockstateFetcher{ctrl: ctrl}
+	mock.recorder = &MockstateFetcherMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockflightSource) EXPECT() *MockflightSourceMockRecorder {
+func (m *MockstateFetcher) EXPECT() *MockstateFetcherMockRecorder {
 	return m.recorder
 }
 
 // GetStates mocks base method.
-func (m *MockflightSource) GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error) {
+func (m *MockstateFetcher) GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStates", ctx, bbox)
 	ret0, _ := ret[0].(*opensky.StatesResponse)
@@ -53,9 +53,9 @@ func (m *MockflightSource) GetStates(ctx context.Context, bbox geo.BBox) (*opens
 }
 
 // GetStates indicates an expected call of GetStates.
-func (mr *MockflightSourceMockRecorder) GetStates(ctx, bbox any) *gomock.Call {
+func (mr *MockstateFetcherMockRecorder) GetStates(ctx, bbox any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStates", reflect.TypeOf((*MockflightSource)(nil).GetStates), ctx, bbox)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStates", reflect.TypeOf((*MockstateFetcher)(nil).GetStates), ctx, bbox)
 }
 
 // MockflightCache is a mock of flightCache interface.

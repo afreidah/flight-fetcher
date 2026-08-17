@@ -63,7 +63,7 @@ type enrichRequest struct {
 type Options struct {
 	Name string
 
-	Source   flightSource
+	Source   stateFetcher
 	Cache    flightCache
 	Logger   sightingLogger
 	Enricher aircraftEnricher

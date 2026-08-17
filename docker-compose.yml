@@ -19,9 +19,13 @@ services:
     image: postgres:16-alpine
     ports:
       - "15432:5432"
+    # The password falls back to a well-known development value so a fresh
+    # clone comes up with no setup. It is not a secret: this stack binds to
+    # localhost and is for local development only. Export POSTGRES_PASSWORD to
+    # override it, and keep it in step with the dsn in config.example.hcl.
     environment:
       POSTGRES_USER: flight_fetcher
-      POSTGRES_PASSWORD: flight_fetcher
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flight_fetcher}
       POSTGRES_DB: flight_fetcher
     volumes:
       - pgdata:/var/lib/postgresql/data
