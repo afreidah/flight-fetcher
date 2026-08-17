@@ -192,7 +192,7 @@ func TestSetup_ReturnsUsableShutdown(t *testing.T) {
 // -------------------------------------------------------------------------
 
 // TestBuildPollers verifies one poller is constructed per planned source, in
-// order. The stores are nil because poller.New only records its dependencies;
+// order. deps is left zero because poller.New only records its dependencies;
 // nothing here starts a poll cycle.
 func TestBuildPollers(t *testing.T) {
 	cfg := &config.Config{
@@ -206,7 +206,7 @@ func TestBuildPollers(t *testing.T) {
 		t.Fatalf("plannedSources() returned %d specs, want 2", len(specs))
 	}
 
-	got := buildPollers(t.Context(), cfg, specs, nil, nil, nil)
+	got := buildPollers(t.Context(), cfg, specs, deps{})
 	if len(got) != len(specs) {
 		t.Fatalf("buildPollers() returned %d pollers, want %d", len(got), len(specs))
 	}
@@ -220,7 +220,7 @@ func TestBuildPollers(t *testing.T) {
 // TestBuildPollers_NoSources verifies an empty plan yields no pollers rather
 // than a nil-length slice the caller has to guard.
 func TestBuildPollers_NoSources(t *testing.T) {
-	got := buildPollers(t.Context(), &config.Config{}, nil, nil, nil, nil)
+	got := buildPollers(t.Context(), &config.Config{}, nil, deps{})
 	if len(got) != 0 {
 		t.Errorf("buildPollers() returned %d pollers, want 0", len(got))
 	}
@@ -258,7 +258,7 @@ func TestStartServer_Optional(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g, gctx := errgroup.WithContext(t.Context())
-			startServer(gctx, g, &config.Config{Server: tt.server}, "test", nil, nil, nil, nil)
+			startServer(gctx, g, &config.Config{Server: tt.server}, "test", nil, deps{})
 			err := g.Wait()
 
 			if tt.wantRegistered && err == nil {
@@ -276,7 +276,7 @@ func TestStartServer_Optional(t *testing.T) {
 func TestStartSquawkMonitor_Optional(t *testing.T) {
 	g, gctx := errgroup.WithContext(t.Context())
 
-	startSquawkMonitor(gctx, g, &config.Config{SquawkMonitor: nil}, nil, nil)
+	startSquawkMonitor(gctx, g, &config.Config{SquawkMonitor: nil}, deps{})
 
 	if err := g.Wait(); err != nil {
 		t.Errorf("Wait() error = %v, want nil with nothing registered", err)
@@ -287,7 +287,7 @@ func TestStartSquawkMonitor_Optional(t *testing.T) {
 func TestStartRetention_Optional(t *testing.T) {
 	g, gctx := errgroup.WithContext(t.Context())
 
-	startRetention(gctx, g, &config.Config{Retention: nil}, nil)
+	startRetention(gctx, g, &config.Config{Retention: nil}, deps{})
 
 	if err := g.Wait(); err != nil {
 		t.Errorf("Wait() error = %v, want nil with nothing registered", err)

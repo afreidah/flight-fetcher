@@ -55,6 +55,17 @@ type Options struct {
 	Version    string
 }
 
+// deps are the long-lived dependencies Run constructs and the components
+// share. They travel as one value because nearly every start helper needs some
+// subset of them, and threading them individually pushed startServer past the
+// parameter limit the style guide sets for exactly this reason.
+type deps struct {
+	cache    *store.RedisStore
+	db       *store.PostgresStore
+	images   *hexdb.Client
+	enricher *enricher.Enricher
+}
+
 // Run starts the daemon and blocks until ctx is cancelled or a component
 // fails. Every startup failure is returned rather than exiting, so a caller
 // can decide what to do with it and a test can assert on it.
@@ -92,19 +103,24 @@ func Run(ctx context.Context, opts Options) error {
 		slog.InfoContext(ctx, "route enrichment enabled", slog.String("source", s.Name))
 	}
 
-	enr := enricher.New(&enricher.Options{
-		AircraftSources: plannedAircraftSources(cfg, hexdbClient),
-		Store:           pgStore,
-		RouteSources:    routeSources,
-		RouteStore:      pgStore,
-	})
+	d := deps{
+		cache:  redisStore,
+		db:     pgStore,
+		images: hexdbClient,
+		enricher: enricher.New(&enricher.Options{
+			AircraftSources: plannedAircraftSources(cfg, hexdbClient),
+			Store:           pgStore,
+			RouteSources:    routeSources,
+			RouteStore:      pgStore,
+		}),
+	}
 
-	pollers := buildPollers(ctx, cfg, specs, redisStore, pgStore, enr)
+	pollers := buildPollers(ctx, cfg, specs, d)
 
 	g, ctx := errgroup.WithContext(ctx)
-	startServer(ctx, g, cfg, opts.Version, specs, redisStore, pgStore, hexdbClient)
-	startSquawkMonitor(ctx, g, cfg, pgStore, enr)
-	startRetention(ctx, g, cfg, pgStore)
+	startServer(ctx, g, cfg, opts.Version, specs, d)
+	startSquawkMonitor(ctx, g, cfg, d)
+	startRetention(ctx, g, cfg, d)
 	for _, p := range pollers {
 		g.Go(func() error { p.Run(ctx); return nil })
 	}
@@ -156,14 +172,7 @@ func setup(ctx context.Context, opts Options) (*config.Config, func(), error) {
 // buildPollers constructs one poller per planned source, all sharing the dedup
 // state so enrichment is not duplicated when two sources hear the same
 // aircraft.
-func buildPollers(
-	ctx context.Context,
-	cfg *config.Config,
-	specs []sourceSpec,
-	cache *store.RedisStore,
-	logger *store.PostgresStore,
-	enr *enricher.Enricher,
-) []*poller.Poller {
+func buildPollers(ctx context.Context, cfg *config.Config, specs []sourceSpec, d deps) []*poller.Poller {
 	dedup := poller.NewDedupState(cfg.EnrichInterval)
 	center := geo.Coord{Lat: cfg.Location.Lat, Lon: cfg.Location.Lon}
 
@@ -175,9 +184,9 @@ func buildPollers(
 		pollers = append(pollers, poller.New(&poller.Options{
 			Name:     s.name,
 			Source:   s.source,
-			Cache:    cache,
-			Logger:   logger,
-			Enricher: enr,
+			Cache:    d.cache,
+			Logger:   d.db,
+			Enricher: d.enricher,
 			Dedup:    dedup,
 			Center:   center,
 			RadiusKm: cfg.Location.RadiusKm,
@@ -190,30 +199,21 @@ func buildPollers(
 // startServer registers the dashboard HTTP server on g when a listen address
 // is configured. Without one the service runs headless, polling and storing
 // but serving nothing.
-func startServer(
-	ctx context.Context,
-	g *errgroup.Group,
-	cfg *config.Config,
-	version string,
-	specs []sourceSpec,
-	redisStore *store.RedisStore,
-	pgStore *store.PostgresStore,
-	images *hexdb.Client,
-) {
+func startServer(ctx context.Context, g *errgroup.Group, cfg *config.Config, version string, specs []sourceSpec, d deps) {
 	if cfg.Server == nil || cfg.Server.Listen == "" {
 		return
 	}
 	srv := server.New(&server.Options{
-		Flights:  redisStore,
-		Heard:    redisStore,
+		Flights:  d.cache,
+		Heard:    d.cache,
 		Sources:  sourceNames(specs),
-		Aircraft: pgStore,
-		Routes:   pgStore,
-		Alerts:   pgStore,
-		Images:   images,
+		Aircraft: d.db,
+		Routes:   d.db,
+		Alerts:   d.db,
+		Images:   d.images,
 		Pingers: []server.HealthPinger{
-			{Name: "redis", Pinger: redisStore},
-			{Name: "postgres", Pinger: pgStore},
+			{Name: "redis", Pinger: d.cache},
+			{Name: "postgres", Pinger: d.db},
 		},
 		Version:    version,
 		RefreshSec: cfg.Server.RefreshSeconds(),
@@ -225,13 +225,7 @@ func startServer(
 // configured, wiring up whichever notification backends the config names. With
 // none configured the manager is a no-op, so detection and storage still run
 // without alerting.
-func startSquawkMonitor(
-	ctx context.Context,
-	g *errgroup.Group,
-	cfg *config.Config,
-	pgStore *store.PostgresStore,
-	enr *enricher.Enricher,
-) {
+func startSquawkMonitor(ctx context.Context, g *errgroup.Group, cfg *config.Config, d deps) {
 	if cfg.SquawkMonitor == nil {
 		return
 	}
@@ -241,17 +235,17 @@ func startSquawkMonitor(
 		slog.InfoContext(ctx, "notifications enabled", slog.String("backend", n.name))
 	}
 	squawkClient := opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret)
-	sm := squawk.New(squawkClient, pgStore, enr, notifyMgr, cfg.SquawkMonitor.Poll)
+	sm := squawk.New(squawkClient, d.db, d.enricher, notifyMgr, cfg.SquawkMonitor.Poll)
 	g.Go(func() error { sm.Run(ctx); return nil })
 }
 
 // startRetention registers the retention sweeper on g when it is configured.
-func startRetention(ctx context.Context, g *errgroup.Group, cfg *config.Config, pgStore *store.PostgresStore) {
+func startRetention(ctx context.Context, g *errgroup.Group, cfg *config.Config, d deps) {
 	if cfg.Retention == nil {
 		return
 	}
 	r := cfg.Retention
-	rw := retention.New(pgStore, r.Sightings, r.Alerts, r.Routes, r.CleanInterval)
+	rw := retention.New(d.db, r.Sightings, r.Alerts, r.Routes, r.CleanInterval)
 	g.Go(func() error { rw.Run(ctx); return nil })
 }
 
