@@ -1,341 +1,88 @@
 // -------------------------------------------------------------------------------
-// Flight Fetcher - Wiring Decision Unit Tests
+// Flight Fetcher - Entrypoint Unit Tests
 //
 // Project: Flight Fetcher / Author: Alex Freidah
 //
-// Covers the entrypoint's planning helpers: which flight sources are polled and
-// at what interval, how the Redis TTL is derived from those intervals, and
-// which route providers and notification backends a given config enables. The
-// helpers are pure translations of config into plans, so these tests assert on
-// the returned plan without standing up Redis, Postgres, or a network.
+// Covers flag parsing and exit-code translation. run is an ordinary function
+// returning a status code rather than calling os.Exit, so these drive it
+// directly instead of building and executing the binary. main itself is one
+// statement, os.Exit(run(...)), and is the only thing here left uncovered.
 // -------------------------------------------------------------------------------
 
 package main
 
 import (
-	"slices"
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
-	"time"
-
-	"github.com/afreidah/flight-fetcher/internal/apiclient/hexdb"
-	"github.com/afreidah/flight-fetcher/internal/config"
 )
 
-// -------------------------------------------------------------------------
-// INTERVAL RESOLUTION
-// -------------------------------------------------------------------------
+// TestRun_BadFlag verifies an unparseable flag exits 2, the conventional code
+// for a usage error, and that the failure is written to the provided stream
+// rather than the process's stderr.
+func TestRun_BadFlag(t *testing.T) {
+	var stderr bytes.Buffer
 
-// TestFirstNonZeroInterval verifies the per-source override falls back to the
-// top-level default, and that non-positive values never win.
-func TestFirstNonZeroInterval(t *testing.T) {
-	tests := []struct {
-		name      string
-		intervals []time.Duration
-		want      time.Duration
-	}{
-		{"no intervals", nil, 0},
-		{"all zero", []time.Duration{0, 0}, 0},
-		{"first wins", []time.Duration{10 * time.Second, 30 * time.Second}, 10 * time.Second},
-		{"falls back to second", []time.Duration{0, 30 * time.Second}, 30 * time.Second},
-		{"negative is skipped", []time.Duration{-5 * time.Second, 30 * time.Second}, 30 * time.Second},
+	if got := run([]string{"-nosuchflag"}, &stderr); got != 2 {
+		t.Errorf("run() = %d, want 2 for a usage error", got)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := firstNonZeroInterval(tt.intervals...); got != tt.want {
-				t.Errorf("firstNonZeroInterval(%v) = %v, want %v", tt.intervals, got, tt.want)
-			}
-		})
+	if stderr.Len() == 0 {
+		t.Error("nothing written to the error stream")
 	}
 }
 
-// -------------------------------------------------------------------------
-// FLIGHT SOURCES
-// -------------------------------------------------------------------------
+// TestRun_StartupFailure verifies a daemon that fails to start exits 1 with
+// the reason on the error stream. A missing config is the cheapest way to
+// reach that path without standing up Redis or Postgres.
+func TestRun_StartupFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	missing := filepath.Join(t.TempDir(), "nope.hcl")
 
-// TestPlannedSources verifies that OpenSky is always planned, that the antenna
-// is appended only when a dump1090 block is present, and that each source
-// resolves its own interval before falling back to the top-level default.
-func TestPlannedSources(t *testing.T) {
-	tests := []struct {
-		name          string
-		cfg           *config.Config
-		wantNames     []string
-		wantIntervals []time.Duration
-	}{
-		{
-			name:          "opensky only, top-level interval",
-			cfg:           &config.Config{Poll: 20 * time.Second},
-			wantNames:     []string{"opensky"},
-			wantIntervals: []time.Duration{20 * time.Second},
-		},
-		{
-			name: "opensky per-source interval overrides top level",
-			cfg: &config.Config{
-				Poll:    20 * time.Second,
-				OpenSky: config.OpenSkyConfig{Interval: 45 * time.Second},
-			},
-			wantNames:     []string{"opensky"},
-			wantIntervals: []time.Duration{45 * time.Second},
-		},
-		{
-			name: "antenna appended and inherits top-level interval",
-			cfg: &config.Config{
-				Poll:     20 * time.Second,
-				Dump1090: &config.Dump1090Config{URL: "http://antenna.local"},
-			},
-			wantNames:     []string{"opensky", "antenna"},
-			wantIntervals: []time.Duration{20 * time.Second, 20 * time.Second},
-		},
-		{
-			name: "antenna polls faster than opensky",
-			cfg: &config.Config{
-				Poll:     20 * time.Second,
-				Dump1090: &config.Dump1090Config{URL: "http://antenna.local", Interval: 5 * time.Second},
-			},
-			wantNames:     []string{"opensky", "antenna"},
-			wantIntervals: []time.Duration{20 * time.Second, 5 * time.Second},
-		},
+	if got := run([]string{"-config", missing, "-log-level", "error"}, &stderr); got != 1 {
+		t.Errorf("run() = %d, want 1 for a startup failure", got)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			specs := plannedSources(tt.cfg)
-
-			names := make([]string, 0, len(specs))
-			intervals := make([]time.Duration, 0, len(specs))
-			for i, spec := range specs {
-				names = append(names, spec.name)
-				intervals = append(intervals, spec.interval)
-				if spec.source == nil {
-					t.Errorf("spec[%d].source is nil", i)
-				}
-			}
-
-			if !slices.Equal(names, tt.wantNames) {
-				t.Errorf("plannedSources() names = %v, want %v", names, tt.wantNames)
-			}
-			if !slices.Equal(intervals, tt.wantIntervals) {
-				t.Errorf("plannedSources() intervals = %v, want %v", intervals, tt.wantIntervals)
-			}
-		})
+	out := stderr.String()
+	if !strings.Contains(out, "flight-fetcher:") {
+		t.Errorf("stderr = %q, want it prefixed with the binary name", out)
+	}
+	if !strings.Contains(out, "loading config") {
+		t.Errorf("stderr = %q, want it to name the failing step", out)
 	}
 }
 
-// TestSourceNames verifies the dashboard gets the planned names in order.
-func TestSourceNames(t *testing.T) {
-	tests := []struct {
-		name  string
-		specs []sourceSpec
-		want  []string
-	}{
-		{"no specs", nil, []string{}},
-		{"single", []sourceSpec{{name: "opensky"}}, []string{"opensky"}},
-		{
-			"order preserved",
-			[]sourceSpec{{name: "opensky"}, {name: "antenna"}},
-			[]string{"opensky", "antenna"},
-		},
+// TestRun_InvalidLogLevel verifies the log-level flag is validated by the
+// daemon and reported the same way, so a typo exits non-zero rather than
+// silently defaulting.
+func TestRun_InvalidLogLevel(t *testing.T) {
+	var stderr bytes.Buffer
+	cfg := filepath.Join(t.TempDir(), "config.hcl")
+	if err := os.WriteFile(cfg, []byte("location {\n lat = 1\n lon = 1\n radius_km = 1\n}\n"), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := sourceNames(tt.specs); !slices.Equal(got, tt.want) {
-				t.Errorf("sourceNames() = %v, want %v", got, tt.want)
-			}
-		})
+	if got := run([]string{"-config", cfg, "-log-level", "chatty"}, &stderr); got != 1 {
+		t.Errorf("run() = %d, want 1", got)
+	}
+	if !strings.Contains(stderr.String(), "invalid log level") {
+		t.Errorf("stderr = %q, want it to name the invalid log level", stderr.String())
 	}
 }
 
-// -------------------------------------------------------------------------
-// CACHE TTL
-// -------------------------------------------------------------------------
+// TestRun_HelpExitsCleanly verifies -h is a usage request, not a crash. flag
+// reports ErrHelp through the same Parse error path as a bad flag, so this
+// pins that it still exits 2 and prints usage rather than starting a daemon.
+func TestRun_HelpExitsCleanly(t *testing.T) {
+	var stderr bytes.Buffer
 
-// TestCacheTTL verifies the TTL covers three cycles of the slowest poller, so
-// a fast antenna cannot shorten the window an aircraft heard only by OpenSky
-// survives in the cache.
-func TestCacheTTL(t *testing.T) {
-	tests := []struct {
-		name        string
-		specs       []sourceSpec
-		wantSlowest time.Duration
-		wantTTL     time.Duration
-	}{
-		{"no specs", nil, 0, 0},
-		{
-			"single source",
-			[]sourceSpec{{interval: 20 * time.Second}},
-			20 * time.Second,
-			60 * time.Second,
-		},
-		{
-			"slowest wins regardless of order",
-			[]sourceSpec{{interval: 5 * time.Second}, {interval: 30 * time.Second}},
-			30 * time.Second,
-			90 * time.Second,
-		},
-		{
-			"slowest listed first",
-			[]sourceSpec{{interval: 30 * time.Second}, {interval: 5 * time.Second}},
-			30 * time.Second,
-			90 * time.Second,
-		},
+	if got := run([]string{"-h"}, &stderr); got != 2 {
+		t.Errorf("run() = %d, want 2", got)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			slowest, ttl := cacheTTL(tt.specs)
-			if slowest != tt.wantSlowest {
-				t.Errorf("cacheTTL() slowest = %v, want %v", slowest, tt.wantSlowest)
-			}
-			if ttl != tt.wantTTL {
-				t.Errorf("cacheTTL() ttl = %v, want %v", ttl, tt.wantTTL)
-			}
-		})
-	}
-}
-
-// -------------------------------------------------------------------------
-// ENRICHMENT SOURCES
-// -------------------------------------------------------------------------
-
-// TestPlannedAircraftSources verifies the unauthenticated HexDB lookup is tried
-// before the credit-spending OpenSky one.
-func TestPlannedAircraftSources(t *testing.T) {
-	sources := plannedAircraftSources(&config.Config{}, hexdb.NewClient())
-
-	want := []string{"hexdb", "opensky"}
-	if len(sources) != len(want) {
-		t.Fatalf("plannedAircraftSources() returned %d sources, want %d", len(sources), len(want))
-	}
-	for i, s := range sources {
-		if s.Name != want[i] {
-			t.Errorf("source[%d].Name = %q, want %q", i, s.Name, want[i])
+	usage := stderr.String()
+	for _, flagName := range []string{"-config", "-log-level"} {
+		if !strings.Contains(usage, flagName) {
+			t.Errorf("usage output missing %s:\n%s", flagName, usage)
 		}
-		if s.Fn == nil {
-			t.Errorf("source[%d].Fn is nil", i)
-		}
-	}
-}
-
-// TestPlannedRouteSources verifies both providers are optional, that a
-// configured block with an empty key is treated as absent, and that AirLabs is
-// tried before FlightAware when both are enabled.
-func TestPlannedRouteSources(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  *config.Config
-		want []string
-	}{
-		{"neither configured", &config.Config{}, nil},
-		{
-			"airlabs block with empty key",
-			&config.Config{AirLabs: &config.AirLabsConfig{}},
-			nil,
-		},
-		{
-			"flightaware block with empty key",
-			&config.Config{FlightAware: &config.FlightAwareConfig{}},
-			nil,
-		},
-		{
-			"airlabs only",
-			&config.Config{AirLabs: &config.AirLabsConfig{APIKey: "al-key"}},
-			[]string{"airlabs"},
-		},
-		{
-			"flightaware only",
-			&config.Config{FlightAware: &config.FlightAwareConfig{APIKey: "fa-key"}},
-			[]string{"flightaware"},
-		},
-		{
-			"both, airlabs first",
-			&config.Config{
-				AirLabs:     &config.AirLabsConfig{APIKey: "al-key"},
-				FlightAware: &config.FlightAwareConfig{APIKey: "fa-key"},
-			},
-			[]string{"airlabs", "flightaware"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sources := plannedRouteSources(tt.cfg)
-			if len(sources) != len(tt.want) {
-				t.Fatalf("plannedRouteSources() returned %d sources, want %d", len(sources), len(tt.want))
-			}
-			for i, s := range sources {
-				if s.Name != tt.want[i] {
-					t.Errorf("source[%d].Name = %q, want %q", i, s.Name, tt.want[i])
-				}
-				if s.Fn == nil {
-					t.Errorf("source[%d].Fn is nil", i)
-				}
-			}
-		})
-	}
-}
-
-// -------------------------------------------------------------------------
-// NOTIFIERS
-// -------------------------------------------------------------------------
-
-// TestPlannedNotifiers verifies each configured block becomes one registration,
-// that multiple targets of the same kind are all registered, and that an
-// absent notifications block leaves the manager a no-op.
-func TestPlannedNotifiers(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  *config.Config
-		want []string
-	}{
-		{"no notifications block", &config.Config{}, nil},
-		{
-			"empty notifications block",
-			&config.Config{Notifications: &config.NotificationsConfig{}},
-			nil,
-		},
-		{
-			"discord only",
-			&config.Config{Notifications: &config.NotificationsConfig{
-				Discord: []config.DiscordConfig{{WebhookURL: "https://discord.example/hook"}},
-			}},
-			[]string{"discord"},
-		},
-		{
-			"telegram only",
-			&config.Config{Notifications: &config.NotificationsConfig{
-				Telegram: []config.TelegramConfig{{BotToken: "token", ChatID: "chat"}},
-			}},
-			[]string{"telegram"},
-		},
-		{
-			"multiple targets of both kinds",
-			&config.Config{Notifications: &config.NotificationsConfig{
-				Discord: []config.DiscordConfig{
-					{WebhookURL: "https://discord.example/one"},
-					{WebhookURL: "https://discord.example/two"},
-				},
-				Telegram: []config.TelegramConfig{{BotToken: "token", ChatID: "chat"}},
-			}},
-			[]string{"discord", "discord", "telegram"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			specs := plannedNotifiers(tt.cfg)
-			if len(specs) != len(tt.want) {
-				t.Fatalf("plannedNotifiers() returned %d specs, want %d", len(specs), len(tt.want))
-			}
-			for i, spec := range specs {
-				if spec.name != tt.want[i] {
-					t.Errorf("spec[%d].name = %q, want %q", i, spec.name, tt.want[i])
-				}
-				if spec.notifier == nil {
-					t.Errorf("spec[%d].notifier is nil", i)
-				}
-			}
-		})
 	}
 }

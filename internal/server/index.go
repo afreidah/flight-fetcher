@@ -11,7 +11,7 @@
 package server
 
 import (
-	_ "embed"
+	_ "embed" // enables the //go:embed directive loading index.html below
 	"fmt"
 	"html"
 	"strings"
