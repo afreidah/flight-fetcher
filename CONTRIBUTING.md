@@ -67,13 +67,18 @@ For branches without a linked issue, use a short kebab-case description.
 
 ## Code Style
 
-See [STYLE_GUIDE.md](STYLE_GUIDE.md) for detailed conventions including:
+See [docs/style-guide.md](docs/style-guide.md) for detailed conventions including:
 
 - File header format (79-char box comments)
 - Section dividers (73-char box comments)
 - Import grouping (stdlib, internal, external)
 - Doc comments on all functions
+- Consumer-declared interfaces and when not to declare one
+- Constructor patterns, Options structs, and clock injection
+- Project layers and what each may import
 - Structured logging with `slog` and context propagation
+- Tracing and metric naming, and label cardinality limits
+- The unit versus integration test split
 - Error wrapping with `fmt.Errorf("doing thing: %w", err)`
 
 ## Project Layout
