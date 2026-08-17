@@ -47,12 +47,36 @@ const (
 	DefaultAircraftTTL = 7 * 24 * time.Hour
 )
 
+// querier is the slice of the sqlc-generated API this store actually calls.
+// Declared here rather than exported by the sqlc package because the store is
+// the consumer, and narrowing it to these ten methods is what lets the mapping
+// and error-translation paths be exercised against a fake instead of a live
+// database. *db.Queries satisfies it structurally.
+type querier interface {
+	UpsertAircraftMeta(ctx context.Context, arg db.UpsertAircraftMetaParams) error
+	GetAircraftMeta(ctx context.Context, arg db.GetAircraftMetaParams) (db.GetAircraftMetaRow, error)
+	LogSighting(ctx context.Context, arg db.LogSightingParams) error
+	UpsertFlightRoute(ctx context.Context, arg db.UpsertFlightRouteParams) error
+	GetFlightRoute(ctx context.Context, arg db.GetFlightRouteParams) (db.GetFlightRouteRow, error)
+	HasRecentSquawkAlert(ctx context.Context, arg db.HasRecentSquawkAlertParams) (bool, error)
+	InsertSquawkAlert(ctx context.Context, arg db.InsertSquawkAlertParams) error
+	GetRecentSquawkAlerts(ctx context.Context, seenAt pgtype.Timestamptz) ([]db.SquawkAlert, error)
+	DeleteOldSightings(ctx context.Context, seenAt pgtype.Timestamptz) (pgconn.CommandTag, error)
+	DeleteOldSquawkAlerts(ctx context.Context, seenAt pgtype.Timestamptz) (pgconn.CommandTag, error)
+	DeleteOldRoutes(ctx context.Context, cachedAt pgtype.Timestamptz) (pgconn.CommandTag, error)
+}
+
 // PostgresStore manages aircraft metadata and sighting history in PostgreSQL.
+//
+// now is the clock every TTL, cooldown, and retention cutoff is derived from.
+// It is a field rather than a direct time.Now call so those windows can be
+// driven to an exact instant in tests; production leaves it as time.Now.
 type PostgresStore struct {
 	pool        *pgxpool.Pool
-	queries     *db.Queries
+	queries     querier
 	routeTTL    time.Duration
 	aircraftTTL time.Duration
+	now         func() time.Time
 	tracer      trace.Tracer
 }
 
@@ -95,6 +119,7 @@ func NewPostgresStore(ctx context.Context, dsn string, routeTTL time.Duration) (
 		queries:     db.New(pool),
 		routeTTL:    routeTTL,
 		aircraftTTL: DefaultAircraftTTL,
+		now:         time.Now,
 		tracer:      otel.Tracer("flight-fetcher/postgres"),
 	}, nil
 }
@@ -125,7 +150,7 @@ func traced[T any](p *PostgresStore, ctx context.Context, name string, fn func(c
 // converting the CommandTag result to a row count.
 func deleteOlderThan(p *PostgresStore, ctx context.Context, name string, maxAge time.Duration, fn func(context.Context, pgtype.Timestamptz) (pgconn.CommandTag, error)) (int64, error) {
 	return traced(p, ctx, name, func(ctx context.Context) (int64, error) {
-		result, err := fn(ctx, pgtype.Timestamptz{Time: time.Now().UTC().Add(-maxAge), Valid: true})
+		result, err := fn(ctx, pgtype.Timestamptz{Time: p.now().UTC().Add(-maxAge), Valid: true})
 		if err != nil {
 			return 0, err
 		}
@@ -156,7 +181,7 @@ func (p *PostgresStore) GetAircraftMeta(ctx context.Context, icao24 string) (*ai
 	return traced(p, ctx, "GetAircraftMeta", func(ctx context.Context) (*aircraft.Info, error) {
 		row, err := p.queries.GetAircraftMeta(ctx, db.GetAircraftMetaParams{
 			Icao24:    icao24,
-			UpdatedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.aircraftTTL), Valid: true},
+			UpdatedAt: pgtype.Timestamptz{Time: p.now().UTC().Add(-p.aircraftTTL), Valid: true},
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -187,7 +212,7 @@ func (p *PostgresStore) LogSighting(ctx context.Context, icao24 string, lat, lon
 		Lon:        lon,
 		DistanceKm: distanceKm,
 		SeenAt: pgtype.Timestamptz{
-			Time:  time.Now().UTC(),
+			Time:  p.now().UTC(),
 			Valid: true,
 		},
 	})
@@ -217,7 +242,7 @@ func (p *PostgresStore) GetFlightRoute(ctx context.Context, callsign string) (*r
 	return traced(p, ctx, "GetFlightRoute", func(ctx context.Context) (*route.Info, error) {
 		row, err := p.queries.GetFlightRoute(ctx, db.GetFlightRouteParams{
 			Callsign: callsign,
-			CachedAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-p.routeTTL), Valid: true},
+			CachedAt: pgtype.Timestamptz{Time: p.now().UTC().Add(-p.routeTTL), Valid: true},
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -244,7 +269,7 @@ func (p *PostgresStore) HasRecentSquawkAlert(ctx context.Context, icao24, squawk
 		return p.queries.HasRecentSquawkAlert(ctx, db.HasRecentSquawkAlertParams{
 			Icao24: icao24,
 			Squawk: squawk,
-			SeenAt: pgtype.Timestamptz{Time: time.Now().UTC().Add(-cooldown), Valid: true},
+			SeenAt: pgtype.Timestamptz{Time: p.now().UTC().Add(-cooldown), Valid: true},
 		})
 	})
 }
@@ -259,7 +284,7 @@ func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign,
 		Lat:      lat,
 		Lon:      lon,
 		SeenAt: pgtype.Timestamptz{
-			Time:  time.Now().UTC(),
+			Time:  p.now().UTC(),
 			Valid: true,
 		},
 	})
@@ -271,7 +296,7 @@ func (p *PostgresStore) InsertSquawkAlert(ctx context.Context, icao24, callsign,
 func (p *PostgresStore) GetRecentSquawkAlerts(ctx context.Context, since time.Duration) ([]squawk.Alert, error) {
 	return traced(p, ctx, "GetRecentSquawkAlerts", func(ctx context.Context) ([]squawk.Alert, error) {
 		rows, err := p.queries.GetRecentSquawkAlerts(ctx, pgtype.Timestamptz{
-			Time:  time.Now().UTC().Add(-since),
+			Time:  p.now().UTC().Add(-since),
 			Valid: true,
 		})
 		if err != nil {
