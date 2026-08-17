@@ -12,7 +12,7 @@
 // network.
 // -------------------------------------------------------------------------------
 
-package serve
+package main
 
 import (
 	"context"
@@ -37,11 +37,11 @@ import (
 // TYPES
 // -------------------------------------------------------------------------
 
-// stateFetcher is the entrypoint's view of a poller data source. main is the
+// flightSource is the entrypoint's view of a poller data source. main is the
 // composition root and the one place the OpenSky and dump1090 clients are held
 // in the same slice, so the interface that unifies them is declared here
 // rather than exported by the poller.
-type stateFetcher interface {
+type flightSource interface {
 	GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error)
 }
 
@@ -50,7 +50,7 @@ type stateFetcher interface {
 // back to the top-level default.
 type sourceSpec struct {
 	name     string
-	source   stateFetcher
+	source   flightSource
 	interval time.Duration
 }
 

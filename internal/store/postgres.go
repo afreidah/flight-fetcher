@@ -28,7 +28,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib" // registers pgx as a database/sql driver; goose needs a *sql.DB
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"

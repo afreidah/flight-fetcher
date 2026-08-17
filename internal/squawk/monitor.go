@@ -56,7 +56,7 @@ const alertCooldown = 30 * time.Minute
 
 // Monitor polls for global emergency squawk codes on a configurable interval.
 type Monitor struct {
-	source   globalStateFetcher
+	source   globalFlightSource
 	store    alertRecorder
 	enricher aircraftEnricher
 	notifier notify.Notifier
@@ -70,7 +70,7 @@ type Monitor struct {
 // New creates a Monitor with the given dependencies and poll interval.
 // The notifier receives alerts for all detected emergencies; use a
 // notify.Manager to fan out to multiple backends.
-func New(source globalStateFetcher, store alertRecorder, enr aircraftEnricher, notifier notify.Notifier, interval time.Duration) *Monitor {
+func New(source globalFlightSource, store alertRecorder, enr aircraftEnricher, notifier notify.Notifier, interval time.Duration) *Monitor {
 	return &Monitor{
 		source:   source,
 		store:    store,
