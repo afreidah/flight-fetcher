@@ -14,7 +14,7 @@
 package aircraft
 
 import (
-	_ "embed" // enables the //go:embed directives loading the lookup tables below
+	_ "embed"
 	"encoding/json"
 	"log"
 	"sort"

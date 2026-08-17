@@ -45,7 +45,7 @@ func pollAndDrain(p *Poller, ctx context.Context) {
 // TestPoll_FiltersByRadius verifies that only aircraft within the configured radius are processed.
 func TestPoll_FiltersByRadius(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockstateFetcher(ctrl)
+	source := NewMockflightSource(ctrl)
 	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMocksightingLogger(ctrl)
@@ -89,7 +89,7 @@ func TestPoll_FiltersByRadius(t *testing.T) {
 // TestPoll_SourceError verifies that a failed API call logs a warning and returns without processing.
 func TestPoll_SourceError(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockstateFetcher(ctrl)
+	source := NewMockflightSource(ctrl)
 	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMocksightingLogger(ctrl)
@@ -108,7 +108,7 @@ func TestPoll_SourceError(t *testing.T) {
 // TestPoll_CacheError_ContinuesProcessing verifies that a Redis failure does not stop sighting logging or enrichment.
 func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockstateFetcher(ctrl)
+	source := NewMockflightSource(ctrl)
 	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMocksightingLogger(ctrl)
@@ -146,7 +146,7 @@ func TestPoll_CacheError_ContinuesProcessing(t *testing.T) {
 // TestPoll_LoggerError_ContinuesProcessing verifies that a Postgres sighting log failure does not stop enrichment.
 func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockstateFetcher(ctrl)
+	source := NewMockflightSource(ctrl)
 	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMocksightingLogger(ctrl)
@@ -184,7 +184,7 @@ func TestPoll_LoggerError_ContinuesProcessing(t *testing.T) {
 // TestPoll_SkipsEnrichmentOnSecondCycle verifies that already-seen aircraft are not re-enriched.
 func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockstateFetcher(ctrl)
+	source := NewMockflightSource(ctrl)
 	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMocksightingLogger(ctrl)
@@ -229,7 +229,7 @@ func TestPoll_SkipsEnrichmentOnSecondCycle(t *testing.T) {
 // TestPoll_EvictsSeenMapsAfterInterval verifies that seen maps are cleared after the eviction interval.
 func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockstateFetcher(ctrl)
+	source := NewMockflightSource(ctrl)
 	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMocksightingLogger(ctrl)
@@ -278,7 +278,7 @@ func TestPoll_EvictsSeenMapsAfterInterval(t *testing.T) {
 // TestPoll_EmptyResponse verifies that an empty states response completes without errors.
 func TestPoll_EmptyResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	source := NewMockstateFetcher(ctrl)
+	source := NewMockflightSource(ctrl)
 	cache := NewMockflightCache(ctrl)
 	cache.EXPECT().MarkHeard(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	logger := NewMocksightingLogger(ctrl)

@@ -22,10 +22,10 @@ import (
 
 //go:generate mockgen -source consumer_interfaces.go -destination mock_consumer_interfaces_test.go -package poller
 
-// stateFetcher provides aircraft state vectors for a geographic area. The
+// flightSource provides aircraft state vectors for a geographic area. The
 // bounding box is a coarse pre-filter; the poller still applies an exact
 // haversine radius check to the results.
-type stateFetcher interface {
+type flightSource interface {
 	GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error)
 }
 

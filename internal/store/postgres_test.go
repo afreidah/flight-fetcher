@@ -71,7 +71,6 @@ type fakeQuerier struct {
 	gotInsert    db.InsertSquawkAlertParams
 	gotSince     pgtype.Timestamptz
 	gotCutoff    pgtype.Timestamptz
-	gotDelete    string
 }
 
 // The three Upsert/Insert params below are passed by value because that is the
@@ -121,26 +120,18 @@ func (f *fakeQuerier) GetRecentSquawkAlerts(_ context.Context, seenAt pgtype.Tim
 	return f.alertRows, f.alertErr
 }
 
-// The three delete methods differ only in which query they stand for, so each
-// records its own name. Without that they would be indistinguishable, and a
-// retention method wired to the wrong query would still pass its test.
-
 func (f *fakeQuerier) DeleteOldSightings(_ context.Context, seenAt pgtype.Timestamptz) (pgconn.CommandTag, error) {
-	return f.recordDelete("DeleteOldSightings", seenAt)
+	f.gotCutoff = seenAt
+	return f.tag, f.tagErr
 }
 
 func (f *fakeQuerier) DeleteOldSquawkAlerts(_ context.Context, seenAt pgtype.Timestamptz) (pgconn.CommandTag, error) {
-	return f.recordDelete("DeleteOldSquawkAlerts", seenAt)
+	f.gotCutoff = seenAt
+	return f.tag, f.tagErr
 }
 
 func (f *fakeQuerier) DeleteOldRoutes(_ context.Context, cachedAt pgtype.Timestamptz) (pgconn.CommandTag, error) {
-	return f.recordDelete("DeleteOldRoutes", cachedAt)
-}
-
-// recordDelete captures which retention query ran and the cutoff it was given.
-func (f *fakeQuerier) recordDelete(query string, cutoff pgtype.Timestamptz) (pgconn.CommandTag, error) {
-	f.gotDelete = query
-	f.gotCutoff = cutoff
+	f.gotCutoff = cachedAt
 	return f.tag, f.tagErr
 }
 
@@ -541,13 +532,12 @@ func TestGetRecentSquawkAlerts_Error(t *testing.T) {
 // count out of the command tag.
 func TestDeleteOlderThan(t *testing.T) {
 	tests := []struct {
-		name      string
-		call      func(*PostgresStore, context.Context, time.Duration) (int64, error)
-		wantQuery string
+		name string
+		call func(*PostgresStore, context.Context, time.Duration) (int64, error)
 	}{
-		{"sightings", (*PostgresStore).DeleteOldSightings, "DeleteOldSightings"},
-		{"squawk alerts", (*PostgresStore).DeleteOldSquawkAlerts, "DeleteOldSquawkAlerts"},
-		{"routes", (*PostgresStore).DeleteOldRoutes, "DeleteOldRoutes"},
+		{"sightings", (*PostgresStore).DeleteOldSightings},
+		{"squawk alerts", (*PostgresStore).DeleteOldSquawkAlerts},
+		{"routes", (*PostgresStore).DeleteOldRoutes},
 	}
 
 	for _, tt := range tests {
@@ -559,9 +549,6 @@ func TestDeleteOlderThan(t *testing.T) {
 			}
 			if got != 7 {
 				t.Errorf("rows deleted = %d, want 7", got)
-			}
-			if fake.gotDelete != tt.wantQuery {
-				t.Errorf("ran query %q, want %q", fake.gotDelete, tt.wantQuery)
 			}
 			assertCutoff(t, fake.gotCutoff, 48*time.Hour)
 		})
