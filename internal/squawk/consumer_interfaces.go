@@ -19,10 +19,10 @@ import (
 	"github.com/afreidah/flight-fetcher/internal/geo"
 )
 
-// globalFlightSource provides aircraft state vectors without geographic
+// globalStateFetcher provides aircraft state vectors without geographic
 // bounds. The monitor passes a world-covering bounding box, so any source
 // that honours the box supplies the global feed.
-type globalFlightSource interface {
+type globalStateFetcher interface {
 	GetStates(ctx context.Context, bbox geo.BBox) (*opensky.StatesResponse, error)
 }
 

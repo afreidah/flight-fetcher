@@ -10,7 +10,7 @@
 // the returned plan without standing up Redis, Postgres, or a network.
 // -------------------------------------------------------------------------------
 
-package main
+package serve
 
 import (
 	"slices"
