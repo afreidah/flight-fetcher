@@ -106,8 +106,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # -coverpkg=./... instruments every package in each test binary, not just
+      # the one under test, so a statement covered transitively by another
+      # package's tests is credited instead of discarded. Worth 2 points on its
+      # own here, and it is what makes the integration profile below able to
+      # report anything outside internal/store.
       - name: Unit tests
-        run: go test -short -race -coverprofile=unit.out -covermode=atomic ./...
+        run: go test -short -race -coverprofile=unit.out -covermode=atomic -coverpkg=./... ./...
 
       - name: Upload unit coverage
         uses: actions/upload-artifact@v7
@@ -116,9 +121,10 @@ jobs:
           path: unit.out
 
   # Same as the unit test job: also runs on every push to main so the SonarQube
-  # scan has merged unit and integration coverage for main. internal/store is
-  # covered only here, behind testcontainers, so without this half the store
-  # package reads as untested in the dashboard.
+  # scan has merged unit and integration coverage for main. internal/store and
+  # internal/cli/serve are covered only here, behind testcontainers, so without
+  # this the store package and the daemon's whole startup path read as untested
+  # in the dashboard.
   integration-test:
     needs: [changes]
     if: needs.changes.outputs.go == 'true' || github.event_name == 'push'
@@ -132,8 +138,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Same -coverpkg reasoning as the unit job. Without it this profile only
+      # ever mentions internal/store, so the aircraft and opensky statements the
+      # store integration tests genuinely exercise are invisible to the scanner.
+      # The reported total drops because the denominator becomes the whole tree;
+      # the scanner merges this with unit.out per line, so that is not a loss.
       - name: Integration tests
-        run: go test -race -count=1 -timeout=5m -coverprofile=integration.out -covermode=atomic ./internal/store/...
+        run: go test -race -count=1 -timeout=10m -coverprofile=integration.out -covermode=atomic -coverpkg=./... ./internal/store/... ./internal/cli/...
 
       - name: Upload integration coverage
         uses: actions/upload-artifact@v7

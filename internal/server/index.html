@@ -4,8 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Flight Fetcher</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Leaflet is pinned to an exact version and guarded with subresource
+       integrity, so a compromised or swapped CDN response fails to execute
+       rather than running in the dashboard's origin. Regenerate the hashes
+       with:
+         curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+       whenever the pinned version changes. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+        crossorigin="anonymous" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+          crossorigin="anonymous"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; overflow: hidden; }
@@ -36,7 +46,23 @@
       cursor: pointer;
       user-select: none;
     }
-    .col-headers span:hover { color: #6b4c5a; }
+    /* Native buttons, reset to look like the plain text they replaced. They
+       are buttons rather than spans so sorting is reachable by keyboard and
+       announced as actionable by assistive tech. */
+    .col-headers button {
+      background: none;
+      border: 0;
+      padding: 0;
+      font: inherit;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .col-headers button:hover { color: #6b4c5a; }
+    .col-headers button:focus-visible {
+      outline: 2px solid #e8879a;
+      outline-offset: 2px;
+    }
     .col-headers .sort-active { color: #e8879a; font-weight: 600; }
     .col-headers .col-icao { width: 110px; flex-shrink: 0; }
     .col-headers .col-callsign { width: 80px; flex-shrink: 0; }
@@ -106,12 +132,12 @@
     <div class="left">
       <div id="squawk-section"></div>
       <div class="col-headers" id="col-headers">
-        <span class="col-icao sort-active" onclick="setSort('icao24')">ICAO24</span>
-        <span class="col-callsign" onclick="setSort('callsign')">Callsign</span>
-        <span class="col-country" onclick="setSort('country')">Country</span>
-        <span class="col-alt" onclick="setSort('alt')">Altitude</span>
-        <span class="col-spd" onclick="setSort('spd')">Speed</span>
-        <span class="col-squawk" onclick="setSort('squawk')">Squawk</span>
+        <button type="button" class="col-icao sort-active" onclick="setSort('icao24')">ICAO24</button>
+        <button type="button" class="col-callsign" onclick="setSort('callsign')">Callsign</button>
+        <button type="button" class="col-country" onclick="setSort('country')">Country</button>
+        <button type="button" class="col-alt" onclick="setSort('alt')">Altitude</button>
+        <button type="button" class="col-spd" onclick="setSort('spd')">Speed</button>
+        <button type="button" class="col-squawk" onclick="setSort('squawk')">Squawk</button>
       </div>
       <div id="flights"></div>
     </div>
@@ -205,7 +231,7 @@
         sortDir = 1;
       }
       // Update header highlights
-      document.querySelectorAll(".col-headers span").forEach(function(s) {
+      document.querySelectorAll(".col-headers button").forEach(function(s) {
         s.classList.remove("sort-active");
       });
       var cls = {"icao24":"col-icao","callsign":"col-callsign","country":"col-country","alt":"col-alt","spd":"col-spd","squawk":"col-squawk"};
