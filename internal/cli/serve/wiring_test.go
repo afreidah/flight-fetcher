@@ -64,8 +64,11 @@ func TestPlannedSources(t *testing.T) {
 		wantIntervals []time.Duration
 	}{
 		{
-			name:          "opensky only, top-level interval",
-			cfg:           &config.Config{Poll: 20 * time.Second},
+			name: "opensky only, top-level interval",
+			cfg: &config.Config{
+				Poll:    20 * time.Second,
+				OpenSky: &config.OpenSkyConfig{},
+			},
 			wantNames:     []string{"opensky"},
 			wantIntervals: []time.Duration{20 * time.Second},
 		},
@@ -73,7 +76,7 @@ func TestPlannedSources(t *testing.T) {
 			name: "opensky per-source interval overrides top level",
 			cfg: &config.Config{
 				Poll:    20 * time.Second,
-				OpenSky: config.OpenSkyConfig{Interval: 45 * time.Second},
+				OpenSky: &config.OpenSkyConfig{Interval: 45 * time.Second},
 			},
 			wantNames:     []string{"opensky"},
 			wantIntervals: []time.Duration{45 * time.Second},
@@ -82,6 +85,7 @@ func TestPlannedSources(t *testing.T) {
 			name: "antenna appended and inherits top-level interval",
 			cfg: &config.Config{
 				Poll:     20 * time.Second,
+				OpenSky:  &config.OpenSkyConfig{},
 				Dump1090: &config.Dump1090Config{URL: "http://antenna.local"},
 			},
 			wantNames:     []string{"opensky", "antenna"},
@@ -91,10 +95,29 @@ func TestPlannedSources(t *testing.T) {
 			name: "antenna polls faster than opensky",
 			cfg: &config.Config{
 				Poll:     20 * time.Second,
+				OpenSky:  &config.OpenSkyConfig{},
 				Dump1090: &config.Dump1090Config{URL: "http://antenna.local", Interval: 5 * time.Second},
 			},
 			wantNames:     []string{"opensky", "antenna"},
 			wantIntervals: []time.Duration{20 * time.Second, 5 * time.Second},
+		},
+		{
+			name: "antenna only when the opensky block is absent",
+			cfg: &config.Config{
+				Poll:     20 * time.Second,
+				Dump1090: &config.Dump1090Config{URL: "http://antenna.local"},
+			},
+			wantNames:     []string{"antenna"},
+			wantIntervals: []time.Duration{20 * time.Second},
+		},
+		{
+			name: "antenna only with its own interval",
+			cfg: &config.Config{
+				Poll:     20 * time.Second,
+				Dump1090: &config.Dump1090Config{URL: "http://antenna.local", Interval: 5 * time.Second},
+			},
+			wantNames:     []string{"antenna"},
+			wantIntervals: []time.Duration{5 * time.Second},
 		},
 	}
 
@@ -200,21 +223,41 @@ func TestCacheTTL(t *testing.T) {
 // -------------------------------------------------------------------------
 
 // TestPlannedAircraftSources verifies the unauthenticated HexDB lookup is tried
-// before the credit-spending OpenSky one.
+// before the credit-spending OpenSky one, and that HexDB alone is a valid chain
+// when no credentials are configured.
 func TestPlannedAircraftSources(t *testing.T) {
-	sources := plannedAircraftSources(&config.Config{}, hexdb.NewClient())
-
-	want := []string{"hexdb", "opensky"}
-	if len(sources) != len(want) {
-		t.Fatalf("plannedAircraftSources() returned %d sources, want %d", len(sources), len(want))
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want []string
+	}{
+		{
+			"hexdb first, then opensky",
+			&config.Config{OpenSky: &config.OpenSkyConfig{}},
+			[]string{"hexdb", "opensky"},
+		},
+		{
+			"hexdb alone when the opensky block is absent",
+			&config.Config{},
+			[]string{"hexdb"},
+		},
 	}
-	for i, s := range sources {
-		if s.Name != want[i] {
-			t.Errorf("source[%d].Name = %q, want %q", i, s.Name, want[i])
-		}
-		if s.Fn == nil {
-			t.Errorf("source[%d].Fn is nil", i)
-		}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sources := plannedAircraftSources(tt.cfg, hexdb.NewClient())
+			if len(sources) != len(tt.want) {
+				t.Fatalf("plannedAircraftSources() returned %d sources, want %d", len(sources), len(tt.want))
+			}
+			for i, s := range sources {
+				if s.Name != tt.want[i] {
+					t.Errorf("source[%d].Name = %q, want %q", i, s.Name, tt.want[i])
+				}
+				if s.Fn == nil {
+					t.Errorf("source[%d].Fn is nil", i)
+				}
+			}
+		})
 	}
 }
 

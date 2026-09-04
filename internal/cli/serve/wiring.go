@@ -79,10 +79,14 @@ func firstNonZeroInterval(intervals ...time.Duration) time.Duration {
 
 // plannedSources returns the flight sources to poll, in priority order, with
 // each interval resolved from its own block falling back to the top-level
-// default. OpenSky is always present; the local antenna is appended only when
-// a dump1090 block is configured.
+// default. Both sources are optional individually; config validation
+// guarantees at least one block is present, so this never returns empty.
 //
-// The OpenSky client built here is one of three the service constructs, the
+// OpenSky comes first when configured because it covers the whole radius,
+// where the antenna only covers what it can physically hear. A receiver-only
+// deployment omits the opensky block entirely and spends no API credits.
+//
+// The OpenSky client built here is one of three the service can construct, the
 // others being for metadata lookup and for the squawk monitor. That is
 // deliberate: an opensky.Client owns its own token cache and its own backoff
 // window, so a 429 on one workload does not silence the others. Emergency
@@ -92,11 +96,14 @@ func firstNonZeroInterval(intervals ...time.Duration) time.Duration {
 // moving backoff into apiclient per endpoint, which would let these share a
 // client without sharing a stall.
 func plannedSources(cfg *config.Config) []sourceSpec {
-	specs := []sourceSpec{{
-		name:     "opensky",
-		source:   opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret),
-		interval: firstNonZeroInterval(cfg.OpenSky.Interval, cfg.Poll),
-	}}
+	var specs []sourceSpec
+	if cfg.OpenSky != nil {
+		specs = append(specs, sourceSpec{
+			name:     "opensky",
+			source:   opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret),
+			interval: firstNonZeroInterval(cfg.OpenSky.Interval, cfg.Poll),
+		})
+	}
 	if cfg.Dump1090 != nil {
 		specs = append(specs, sourceSpec{
 			name:     "antenna",
@@ -132,13 +139,22 @@ func cacheTTL(specs []sourceSpec) (slowest, ttl time.Duration) {
 
 // plannedAircraftSources returns the aircraft metadata lookups to try, in
 // order. HexDB is unauthenticated so it goes first; the OpenSky lookup behind
-// it spends credits and gets its own client, for the reason given on
-// plannedSources.
+// it spends credits, gets its own client for the reason given on
+// plannedSources, and is only added when credentials exist.
+//
+// HexDB alone is a complete chain. A receiver-only deployment still enriches
+// most aircraft, and the ones HexDB misses simply stay unenriched rather than
+// failing.
 func plannedAircraftSources(cfg *config.Config, images *hexdb.Client) []enricher.NamedSource[aircraft.Info] {
-	return []enricher.NamedSource[aircraft.Info]{
+	sources := []enricher.NamedSource[aircraft.Info]{
 		{Name: "hexdb", Fn: images.Lookup},
-		{Name: "opensky", Fn: opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret).Lookup},
 	}
+	if cfg.OpenSky != nil {
+		sources = append(sources, enricher.NamedSource[aircraft.Info]{
+			Name: "opensky", Fn: opensky.NewClient(cfg.OpenSky.ID, cfg.OpenSky.Secret).Lookup,
+		})
+	}
+	return sources
 }
 
 // plannedRouteSources returns the route lookups to try, in order. Both are

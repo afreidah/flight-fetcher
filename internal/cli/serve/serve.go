@@ -225,8 +225,13 @@ func startServer(ctx context.Context, g *errgroup.Group, cfg *config.Config, ver
 // configured, wiring up whichever notification backends the config names. With
 // none configured the manager is a no-op, so detection and storage still run
 // without alerting.
+//
+// The monitor is an OpenSky client scanning a world-covering box, so it needs
+// credentials. Config validation rejects a squawk_monitor block without an
+// opensky one; the check here is repeated so a Config assembled in code cannot
+// panic on a nil dereference.
 func startSquawkMonitor(ctx context.Context, g *errgroup.Group, cfg *config.Config, d deps) {
-	if cfg.SquawkMonitor == nil {
+	if cfg.SquawkMonitor == nil || cfg.OpenSky == nil {
 		return
 	}
 	notifyMgr := notify.NewManager()

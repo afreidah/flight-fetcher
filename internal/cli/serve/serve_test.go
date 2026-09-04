@@ -199,6 +199,7 @@ func TestBuildPollers(t *testing.T) {
 		Poll:           20 * time.Second,
 		EnrichInterval: time.Hour,
 		Location:       config.Location{Lat: 34.05, Lon: -118.25, RadiusKm: 50},
+		OpenSky:        &config.OpenSkyConfig{},
 		Dump1090:       &config.Dump1090Config{URL: "http://antenna.local", Interval: 5 * time.Second},
 	}
 	specs := plannedSources(cfg)
