@@ -18,6 +18,11 @@ location {
   radius_km = 50.0
 }
 
+# Optional: the OpenSky Network API. Omit this whole block to run receiver-only
+# and spend no API credits; a dump1090 block is then required, since at least
+# one flight source must be configured. Omitting it also disables the OpenSky
+# aircraft-metadata lookup, leaving HexDB as the only enrichment source, and
+# rules out squawk_monitor, which polls OpenSky globally.
 opensky {
   id            = "YOUR_CLIENT_ID"
   secret        = "YOUR_CLIENT_SECRET"
@@ -67,7 +72,16 @@ notifications {
 # Optional: local ADS-B receiver (dump1090/readsb/dump1090-fa/PiAware).
 # When configured alongside opensky, BOTH sources run concurrently on
 # independent intervals and write to the same cache/store - last write wins.
+# Configured without opensky, the antenna is the only source and the service
+# makes no metered API calls for aircraft positions.
 # PiAware serves aircraft.json at /skyaware/data/aircraft.json on port 80.
+#
+# Note that the Redis TTL is derived from the slowest configured poll interval
+# (three times it), so a receiver-only deployment polling every 5s caches for
+# 15s. Aircraft leave the dashboard promptly once the receiver stops listing
+# them, but a failed fetch refreshes nothing, so three consecutive failures
+# clear the dashboard until the next good poll. Raise poll_interval if that
+# matters more than freshness.
 # dump1090 {
 #   url           = "http://piaware.local/skyaware"
 #   poll_interval = "10s"   # optional; local antenna has no rate limit

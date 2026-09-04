@@ -35,7 +35,7 @@ type rawConfig struct {
 	enrich time.Duration
 
 	Location      Location                `hcl:"location,block"`
-	OpenSky       OpenSkyConfig           `hcl:"opensky,block"`
+	OpenSky       *OpenSkyConfig          `hcl:"opensky,block"`
 	Redis         RedisConfig             `hcl:"redis,block"`
 	Postgres      PostgresConfig          `hcl:"postgres,block"`
 	AirLabs       *AirLabsConfig          `hcl:"airlabs,block"`
@@ -73,7 +73,7 @@ type Config struct {
 	EnrichInterval time.Duration
 
 	Location    Location
-	OpenSky     OpenSkyConfig
+	OpenSky     *OpenSkyConfig
 	Redis       RedisConfig
 	Postgres    PostgresConfig
 	AirLabs     *AirLabsConfig
@@ -219,6 +219,7 @@ func (r *rawConfig) parse() (*Config, error) {
 		r.validateAirLabs,
 		r.validateFlightAware,
 		r.parseDump1090,
+		r.validateFlightSources,
 	} {
 		if err := validate(); err != nil {
 			return nil, err
@@ -282,10 +283,17 @@ func (r *rawConfig) parseIntervals() error {
 	return nil
 }
 
-// parseOpenSky checks that credentials are present and parses the optional
-// per-source poll interval, which carries the same 10s floor as the top-level
-// default because it overrides it for the same credit-metered API.
+// parseOpenSky validates the OpenSky block when one is present and parses its
+// optional per-source poll interval, which carries the same 10s floor as the
+// top-level default because it overrides it for the same credit-metered API.
+//
+// The block itself is optional: a receiver-only deployment omits it and polls
+// nothing but the local antenna. Credentials are still required once the block
+// exists, since a half-filled block is a mistake rather than a choice.
 func (r *rawConfig) parseOpenSky() error {
+	if r.OpenSky == nil {
+		return nil
+	}
 	if r.OpenSky.ID == "" || r.OpenSky.Secret == "" {
 		return errors.New("opensky.id and opensky.secret are required")
 	}
@@ -300,6 +308,26 @@ func (r *rawConfig) parseOpenSky() error {
 		return fmt.Errorf("opensky.poll_interval must be at least 10s, got %s", d)
 	}
 	r.OpenSky.Interval = d
+	return nil
+}
+
+// validateFlightSources requires at least one source of aircraft positions.
+// Both blocks are individually optional, so without this a config naming
+// neither would load and the service would start, connect to everything, and
+// then sit there polling nothing.
+//
+// It runs after both source blocks have parsed so its error is the last thing
+// a user sees, rather than masking a malformed block that is present.
+func (r *rawConfig) validateFlightSources() error {
+	if r.OpenSky == nil && r.Dump1090 == nil {
+		return errors.New("at least one flight source is required: configure an opensky or dump1090 block")
+	}
+	// The squawk monitor is an OpenSky client scanning a world-covering box.
+	// There is no antenna equivalent, since a local receiver only hears its own
+	// airspace, so the monitor cannot run without credentials.
+	if r.SquawkMonitor != nil && r.OpenSky == nil {
+		return errors.New("squawk_monitor requires an opensky block: the monitor polls OpenSky globally and has no antenna equivalent")
+	}
 	return nil
 }
 

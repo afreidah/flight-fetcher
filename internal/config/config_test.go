@@ -801,3 +801,124 @@ func writeTemp(t *testing.T, content string) string {
 	}
 	return path
 }
+
+// -------------------------------------------------------------------------
+// OPTIONAL OPENSKY BLOCK
+// -------------------------------------------------------------------------
+
+// noOpenSkyBase is a valid config with no opensky block, so the antenna is the
+// only flight source. Overrides are appended.
+func noOpenSkyBase(overrides string) string {
+	return `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+poll_interval = "20s"
+redis {
+  addr = "localhost:6379"
+}
+postgres {
+  dsn = "postgres://localhost/test"
+}
+dump1090 {
+  url = "http://antenna.local/data/aircraft.json"
+}
+` + overrides
+}
+
+// TestLoad_AntennaOnly verifies a config with no opensky block loads, leaving
+// OpenSky nil so the wiring can drop it from the source list. This is the
+// receiver-only deployment the block was made optional for.
+func TestLoad_AntennaOnly(t *testing.T) {
+	cfg, err := Load(writeTemp(t, noOpenSkyBase("")))
+	if err != nil {
+		t.Fatalf("Load() error = %v, want an antenna-only config to be valid", err)
+	}
+	if cfg.OpenSky != nil {
+		t.Errorf("OpenSky = %+v, want nil when the block is absent", cfg.OpenSky)
+	}
+	if cfg.Dump1090 == nil {
+		t.Fatal("Dump1090 is nil, want the configured antenna")
+	}
+	if cfg.Dump1090.URL != "http://antenna.local/data/aircraft.json" {
+		t.Errorf("Dump1090.URL = %q, want the configured value", cfg.Dump1090.URL)
+	}
+}
+
+// TestLoad_NoFlightSource verifies a config naming neither source is rejected.
+// Both blocks are individually optional, so without this check the service
+// would start cleanly and then poll nothing at all.
+func TestLoad_NoFlightSource(t *testing.T) {
+	content := `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+poll_interval = "20s"
+redis {
+  addr = "localhost:6379"
+}
+postgres {
+  dsn = "postgres://localhost/test"
+}
+`
+	_, err := Load(writeTemp(t, content))
+	if err == nil {
+		t.Fatal("Load() error = nil, want a config with no flight source to be rejected")
+	}
+	if !strings.Contains(err.Error(), "at least one flight source") {
+		t.Errorf("error = %q, want it to say a flight source is required", err)
+	}
+}
+
+// TestLoad_SquawkMonitorRequiresOpenSky verifies the monitor cannot be enabled
+// without credentials. It polls OpenSky over a world-covering box and has no
+// antenna equivalent, so an antenna-only config naming it is a mistake worth
+// reporting rather than silently skipping.
+func TestLoad_SquawkMonitorRequiresOpenSky(t *testing.T) {
+	_, err := Load(writeTemp(t, noOpenSkyBase(`
+squawk_monitor {
+  interval = "60s"
+}
+`)))
+	if err == nil {
+		t.Fatal("Load() error = nil, want squawk_monitor without opensky to be rejected")
+	}
+	if !strings.Contains(err.Error(), "squawk_monitor requires an opensky block") {
+		t.Errorf("error = %q, want it to name the missing opensky block", err)
+	}
+}
+
+// TestLoad_PartialOpenSkyBlock verifies a block that exists but is missing
+// credentials is still an error. Omitting the block is a choice; half-filling
+// it is a mistake.
+func TestLoad_PartialOpenSkyBlock(t *testing.T) {
+	content := `
+location {
+  lat       = 0.0
+  lon       = 0.0
+  radius_km = 50.0
+}
+opensky {
+  id     = "test"
+  secret = ""
+}
+poll_interval = "20s"
+redis {
+  addr = "localhost:6379"
+}
+postgres {
+  dsn = "postgres://localhost/test"
+}
+`
+	_, err := Load(writeTemp(t, content))
+	if err == nil {
+		t.Fatal("Load() error = nil, want a half-filled opensky block to be rejected")
+	}
+	if !strings.Contains(err.Error(), "opensky.id and opensky.secret are required") {
+		t.Errorf("error = %q, want it to name the missing credentials", err)
+	}
+}
