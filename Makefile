@@ -80,10 +80,22 @@ clean: ## Stop the stack, remove volumes, and remove the binary
 	rm -f flight-fetcher
 
 # -------------------------------------------------------------------------
+# BUILDX SETUP
+# -------------------------------------------------------------------------
+
+# The default builder uses the docker driver, which builds one platform only,
+# so push depends on this to work on a machine that has never built this
+# project.
+builder: ## Ensure the Buildx builder exists
+	@docker buildx inspect flight-fetcher-builder >/dev/null 2>&1 || \
+		docker buildx create --name flight-fetcher-builder --driver-opt network=host --use
+	@docker buildx inspect --bootstrap
+
+# -------------------------------------------------------------------------
 # DOCKER
 # -------------------------------------------------------------------------
 
-push: ## Build and push multi-arch images to registry
+push: builder ## Build and push multi-arch images to registry
 	@echo "Building and pushing $(REGISTRY)/$(IMAGE):$(VERSION) for $(PLATFORMS)"
 	docker buildx build \
 	  --pull \
@@ -106,5 +118,5 @@ release: ## Tag and push to trigger a GitHub Release (reads .version)
 	git tag $(VERSION)
 	git push origin $(VERSION)
 
-.PHONY: help generate migration vet govulncheck lint test build run stop clean push changelog release
+.PHONY: help generate migration vet govulncheck lint test build run stop clean builder push changelog release
 .DEFAULT_GOAL := help
